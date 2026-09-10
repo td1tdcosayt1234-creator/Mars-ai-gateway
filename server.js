@@ -17,6 +17,9 @@ import { audit, auditMiddleware, verifyChain } from './server/middleware/auditLo
 import { guardPrototypePollution, xssGuard, strictJsonLimit } from './server/middleware/validation.js';
 import { secureStore } from './server/utils/secureStore.js';
 import { superHeaders, uaAnomaly, ipReputation } from './server/middleware/superSecurity.js';
+import { tier1Perimeter, internalHmacSign } from './server/middleware/tier1Perimeter.js';
+import { tier2Guard } from './server/middleware/tier2Core.js';
+import twoFactorRouter from './server/routes/twoFactor.js';
 import oauthRouter from './server/routes/oauth.js';
 import aiGateway from './server/routes/aiGateway.js';
 import { aiFirewall } from './server/middleware/aiFirewall.js';
@@ -160,6 +163,8 @@ app.use(cors({
 app.use(express.json({ limit: '10kb', strict: true }));
 app.use(express.urlencoded({ extended: false, limit: '10kb' }));
 app.use(cookieParser());
+app.use(tier1Perimeter);
+app.use(internalHmacSign);
 app.use(superHeaders);
 app.use(uaAnomaly);
 app.use(ipReputation);
@@ -251,6 +256,7 @@ function recordBrute(ip, success){
 // ROUTES
 // ---------------------------------------------------------------------------
 app.use('/api/auth/oauth', oauthRouter);
+app.use('/api/2fa', twoFactorRouter);
 app.get('/api/chain/verify', authenticate, (req,res)=> res.json(verifyChain()));
 app.get('/api/health', (req,res)=>{
   res.json({ status:'ok', uptime: process.uptime(), sol: 782, secure: true, csp: 'enabled', hsts: 'enabled' });
@@ -358,6 +364,10 @@ app.delete('/api/keys/:id', authenticate, csrfCheck, param('id').isString().trim
 });
 
 app.use('/api', aiGateway);
+// Tier2 vault guard for sensitive API (keys, metrics, audit) - 2-tier hack-proof
+app.use('/api/keys', tier2Guard);
+app.use('/api/metrics', tier2Guard);
+app.use('/api/audit', tier2Guard);
 app.get('/api/metrics', authenticate, (req,res)=>{
   // mock live metrics (in prod, pull from real telemetry)
   const now=Date.now();
