@@ -16,6 +16,8 @@ import { fileURLToPath } from 'url';
 import { audit, auditMiddleware, verifyChain } from './server/middleware/auditLogger.js';
 import { guardPrototypePollution, xssGuard, strictJsonLimit } from './server/middleware/validation.js';
 import { secureStore } from './server/utils/secureStore.js';
+import { superHeaders, uaAnomaly, ipReputation } from './server/middleware/superSecurity.js';
+import oauthRouter from './server/routes/oauth.js';
 import aiGateway from './server/routes/aiGateway.js';
 import { aiFirewall } from './server/middleware/aiFirewall.js';
 import { quotaGuard } from './server/middleware/tenantQuota.js';
@@ -158,6 +160,9 @@ app.use(cors({
 app.use(express.json({ limit: '10kb', strict: true }));
 app.use(express.urlencoded({ extended: false, limit: '10kb' }));
 app.use(cookieParser());
+app.use(superHeaders);
+app.use(uaAnomaly);
+app.use(ipReputation);
 app.use(auditMiddleware);
 app.use(guardPrototypePollution);
 app.use(xssGuard);
@@ -245,6 +250,7 @@ function recordBrute(ip, success){
 // ---------------------------------------------------------------------------
 // ROUTES
 // ---------------------------------------------------------------------------
+app.use('/api/auth/oauth', oauthRouter);
 app.get('/api/chain/verify', authenticate, (req,res)=> res.json(verifyChain()));
 app.get('/api/health', (req,res)=>{
   res.json({ status:'ok', uptime: process.uptime(), sol: 782, secure: true, csp: 'enabled', hsts: 'enabled' });
