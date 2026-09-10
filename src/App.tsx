@@ -4,13 +4,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import marsBgImage from './assets/images/mars_gateway_bg_1789040540420.jpg';
-import { TopNav } from './components/TopNav';
-import { HeroOverlay } from './components/HeroOverlay';
-import { KeyGeneratorCard } from './components/KeyGeneratorCard';
-import { StarfieldCanvas } from './components/StarfieldCanvas';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { TerminalInterface } from './components/TerminalInterface';
-import { MetricsDashboard } from './components/MetricsDashboard';
 import { KeyVaultModal } from './components/KeyVaultModal';
 import { PlaygroundModal } from './components/PlaygroundModal';
 import { DocsModal } from './components/DocsModal';
@@ -18,6 +13,12 @@ import { KeyCreationModal } from './components/KeyCreationModal';
 import { ApiKeyRecord, GatewayMetrics, ModelTier, RelayZone, RequestLog } from './types';
 import { INITIAL_KEYS, INITIAL_METRICS, INITIAL_REQUEST_LOGS, MODEL_TIER_CONFIG } from './data/mockData';
 import { toggleCosmicDrone, playTerminalBlip } from './utils/sound';
+
+import { Layout } from './components/layout/Layout';
+import { HomePage } from './pages/HomePage';
+import { DashboardPage } from './pages/DashboardPage';
+import { ModelsPage } from './pages/ModelsPage';
+import { LoginPage } from './pages/LoginPage';
 
 export default function App() {
   const [keys, setKeys] = useState<ApiKeyRecord[]>(() => {
@@ -35,9 +36,7 @@ export default function App() {
   const [audioActive, setAudioActive] = useState(false);
 
   // Active view states
-  const [activeTab, setActiveTab] = useState<'home' | 'keys' | 'terminal' | 'telemetry' | 'docs'>('home');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
-  const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
   const [isKeyVaultOpen, setIsKeyVaultOpen] = useState(false);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [isNewKeyModalOpen, setIsNewKeyModalOpen] = useState(false);
@@ -166,15 +165,6 @@ export default function App() {
     return found;
   }, []);
 
-  // Handle Tab selections
-  const handleSelectTab = (tab: 'home' | 'keys' | 'terminal' | 'telemetry' | 'docs') => {
-    setActiveTab(tab);
-    if (tab === 'keys') setIsKeyVaultOpen(true);
-    if (tab === 'terminal') setIsTerminalOpen(true);
-    if (tab === 'telemetry') setIsTelemetryOpen(true);
-    if (tab === 'docs') setIsDocsOpen(true);
-  };
-
   const handleToggleAudio = () => {
     const nextState = !audioActive;
     const ok = toggleCosmicDrone(nextState);
@@ -187,90 +177,47 @@ export default function App() {
   };
 
   return (
-    <main className="relative min-h-screen w-full bg-[#030407] text-slate-100 flex items-center justify-center p-2 sm:p-4 md:p-6 lg:p-8 select-none font-sans overflow-x-hidden">
-      {/* Outer ambient cosmic backdrop glow */}
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_rgba(245,158,11,0.08),_transparent_70%)]" />
-
-      {/* 
-        The Curved Outer Viewport Bezel
-        Directly inspired by the rounded viewport frame in the user's reference image!
-        Gives the sensation of looking through a futuristic spaceship / Mars observation window.
-      */}
-      <div className="relative w-full max-w-[1520px] min-h-[92vh] rounded-[24px] sm:rounded-[32px] md:rounded-[40px] border border-white/20 sm:border-white/25 shadow-[0_0_80px_rgba(0,0,0,0.9),_inset_0_0_30px_rgba(255,255,255,0.04)] overflow-hidden flex flex-col justify-between backdrop-blur-sm bg-black">
-        {/* Background Image of Mars with warm glowing research habitat */}
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-1000 scale-100"
-          style={{
-            backgroundImage: `url(${marsBgImage})`,
-          }}
-        />
-
-        {/* Cinematic Grading & Atmosphere Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-black/60 pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_60%,_rgba(245,158,11,0.12),_transparent_60%)] pointer-events-none" />
-        
-        {/* Dynamic Canvas with Twinkling Stars & Drifting Martian Dust */}
-        <StarfieldCanvas stormDensity={0.25} />
-
-        {/* Top Navigation Bar */}
-        <TopNav
-          activeTab={activeTab}
-          onSelectTab={handleSelectTab}
-          onOpenNewKeyModal={() => setIsNewKeyModalOpen(true)}
-          audioActive={audioActive}
-          onToggleAudio={handleToggleAudio}
-          keysCount={keys.filter((k) => k.status === 'active').length}
-        />
-
-        {/* Hero Section: Left Typography + Right Floating Generator Card */}
-        <div className="relative z-20 flex-1 flex flex-col lg:flex-row items-center lg:items-end justify-between px-6 sm:px-10 md:px-14 lg:px-16 py-8 lg:py-12 gap-10">
-          {/* Left: Bold Display Heading, Subtitle & Rating Badge */}
-          <HeroOverlay
-            onOpenTerminal={() => setIsTerminalOpen(true)}
-            onOpenTelemetry={() => setIsTelemetryOpen(true)}
+    <Router>
+      <Routes>
+        <Route element={
+          <Layout 
+            keysCount={keys.filter((k) => k.status === 'active').length}
+            audioActive={audioActive}
+            handleToggleAudio={handleToggleAudio}
+            setIsNewKeyModalOpen={setIsNewKeyModalOpen}
+            setIsTerminalOpen={setIsTerminalOpen}
+            setIsTelemetryOpen={() => { /* no-op since it's a page now */ }}
+            metrics={metrics}
           />
-
-          {/* Right: Floating Glassmorphic Card (matching Evergreen Lodge card from photo) */}
-          <div className="w-full lg:w-auto flex justify-center lg:justify-end">
-            <KeyGeneratorCard
-              onGenerateKey={handleGenerateKey}
-              onOpenTerminal={() => setIsTerminalOpen(true)}
-              onOpenPlayground={handleOpenPlayground}
+        }>
+          <Route path="/" element={
+            <HomePage 
+              setIsTerminalOpen={setIsTerminalOpen}
+              setIsTelemetryOpen={() => { /* no-op */ }}
+              handleGenerateKey={handleGenerateKey}
+              handleOpenPlayground={handleOpenPlayground}
             />
-          </div>
-        </div>
-
-        {/* Subtle Bottom Bar with Quick Toggles */}
-        <footer className="relative z-20 flex flex-wrap items-center justify-between px-6 sm:px-10 md:px-14 py-4 text-xs font-mono text-slate-400/80 border-t border-white/5 bg-black/40 backdrop-blur-md">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => {
-                playTerminalBlip(800);
-                setIsTerminalOpen(true);
-              }}
-              className="flex items-center gap-1.5 hover:text-amber-300 transition-colors cursor-pointer"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>&gt;_ Open Mars Terminal (ares-cli)</span>
-            </button>
-            <span className="hidden sm:inline text-white/20">|</span>
-            <button
-              onClick={() => {
-                playTerminalBlip(750);
-                setIsTelemetryOpen(true);
-              }}
-              className="hidden sm:flex items-center gap-1.5 hover:text-cyan-300 transition-colors cursor-pointer"
-            >
-              <span>Telemetry: {metrics.currentRps.toFixed(0)} RPS</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-4 text-slate-400">
-            <span>Mars Relay Station #04 · Olympus Mons Hub</span>
-            <span className="text-amber-400/80 font-bold">Sol 782</span>
-          </div>
-        </footer>
-      </div>
+          } />
+          
+          <Route path="/models" element={<ModelsPage />} />
+          
+          <Route path="/dashboard" element={
+            <DashboardPage 
+              metrics={metrics}
+              requestLogs={requestLogs}
+              isStreaming={isStreaming}
+              setIsStreaming={setIsStreaming}
+              keys={keys}
+              handleOpenPlayground={handleOpenPlayground}
+              setIsTerminalOpen={setIsTerminalOpen}
+            />
+          } />
+          
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
 
       {/* Interactive Modals & Drawers */}
       <TerminalInterface
@@ -280,15 +227,6 @@ export default function App() {
         metrics={metrics}
         onGenerateKey={handleGenerateKey}
         onRevokeKey={handleRevokeKey}
-      />
-
-      <MetricsDashboard
-        isOpen={isTelemetryOpen}
-        onClose={() => setIsTelemetryOpen(false)}
-        metrics={metrics}
-        requestLogs={requestLogs}
-        isStreaming={isStreaming}
-        onToggleStreaming={() => setIsStreaming(!isStreaming)}
       />
 
       <KeyVaultModal
@@ -334,6 +272,6 @@ export default function App() {
           setIsTerminalOpen(true);
         }}
       />
-    </main>
+    </Router>
   );
 }
