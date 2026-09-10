@@ -16,6 +16,9 @@ import { fileURLToPath } from 'url';
 import { audit, auditMiddleware, verifyChain } from './server/middleware/auditLogger.js';
 import { guardPrototypePollution, xssGuard, strictJsonLimit } from './server/middleware/validation.js';
 import { secureStore } from './server/utils/secureStore.js';
+import aiGateway from './server/routes/aiGateway.js';
+import { aiFirewall } from './server/middleware/aiFirewall.js';
+import { quotaGuard } from './server/middleware/tenantQuota.js';
 
 dotenv.config();
 
@@ -348,6 +351,7 @@ app.delete('/api/keys/:id', authenticate, csrfCheck, param('id').isString().trim
   res.json({ ok:true, id:k.id });
 });
 
+app.use('/api', aiGateway);
 app.get('/api/metrics', authenticate, (req,res)=>{
   // mock live metrics (in prod, pull from real telemetry)
   const now=Date.now();
