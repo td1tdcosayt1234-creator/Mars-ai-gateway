@@ -1,0 +1,6 @@
+Contact: mailto:td1tdcosayt1234@gmail.com
+Expires: 2027-09-10T00:00:00.000Z
+Acknowledgments: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway/security/advisories
+Preferred-Languages: en, bn
+Canonical: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway/.well-known/security.txt
+Policy: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway/blob/main/SECURITY.md
