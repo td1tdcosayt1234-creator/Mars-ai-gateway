@@ -40,7 +40,7 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-white font-sans flex items-center gap-1.5">
+            <span className="text-xl font-bold tracking-tight text-white font-display flex items-center gap-1.5">
               Ares<span className="text-amber-400 font-extrabold">AI</span>
             </span>
             <span className="px-1.5 py-0.5 text-[10px] uppercase font-mono tracking-wider font-semibold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">

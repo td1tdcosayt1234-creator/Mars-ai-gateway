@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Cpu, Shield, Zap } from 'lucide-react';
 import { MODEL_TIER_CONFIG } from '../data/mockData';
+import { motion } from 'motion/react';
 
 export function ModelsPage() {
   const models = Object.entries(MODEL_TIER_CONFIG).map(([key, value]) => ({
@@ -8,10 +9,23 @@ export function ModelsPage() {
     ...value
   }));
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] } }
+  };
+
   return (
-    <div className="flex-1 w-full max-w-6xl mx-auto flex flex-col p-6 overflow-y-auto animate-in fade-in duration-500">
-      <div className="mb-10 text-center">
-        <h2 className="text-3xl font-bold text-white tracking-tight flex items-center justify-center gap-3 mb-3">
+    <motion.div variants={containerVariants} initial="hidden" animate="show" className="flex-1 w-full max-w-6xl mx-auto flex flex-col p-6 overflow-y-auto">
+      <motion.div variants={itemVariants} className="mb-10 text-center">
+        <h2 className="text-4xl font-bold text-white tracking-tight flex items-center justify-center gap-3 mb-3 font-display">
           <Box className="w-8 h-8 text-amber-500" />
           Gateway Neural Models
         </h2>
@@ -19,14 +33,14 @@ export function ModelsPage() {
           Deep-space optimized inference clusters running on the Mars Gateway. 
           Latency depends on relay distance and tier allocation.
         </p>
-      </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6">
         {models.map((model) => (
-          <div key={model.id} className="p-6 rounded-3xl bg-black/40 border border-white/10 backdrop-blur-md flex flex-col h-full hover:border-amber-500/30 transition-colors">
+          <motion.div variants={itemVariants} key={model.id} className="p-6 rounded-3xl bg-black/40 border border-white/10 backdrop-blur-md flex flex-col h-full hover:border-amber-500/30 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-xl font-bold text-white font-sans">{model.id.replace(/-/g, ' ').toUpperCase()}</h3>
+                <h3 className="text-xl font-bold text-white font-display">{model.id.replace(/-/g, ' ').toUpperCase()}</h3>
                 <p className="text-xs font-mono text-amber-400/80 mt-1">{model.quotaFormatted} Tokens / Month</p>
               </div>
               <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
@@ -53,9 +67,9 @@ export function ModelsPage() {
                 Tier: {model.id.split('-').pop()?.toUpperCase()}
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

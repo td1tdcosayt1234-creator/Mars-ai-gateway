@@ -53,7 +53,7 @@ export const KeyGeneratorCard: React.FC<KeyGeneratorCardProps> = ({
       {/* Card Header (matching Evergreen Pine Family Lodge) */}
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2 font-display">
             Ares Gateway Engine
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">

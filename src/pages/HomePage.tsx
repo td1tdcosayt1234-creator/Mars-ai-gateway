@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { KeyGeneratorCard } from '../components/KeyGeneratorCard';
 import { Sparkles, BrainCircuit, Zap, Eye, Cpu, ArrowRight } from 'lucide-react';
 import { playTerminalBlip } from '../utils/sound';
+import { motion } from 'motion/react';
 
 export function HomePage({
   setIsTerminalOpen,
@@ -11,31 +12,60 @@ export function HomePage({
 }: any) {
   const navigate = useNavigate();
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.15,
+        delayChildren: 0.2,
+      },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 30, filter: 'blur(10px)' },
+    show: { 
+      opacity: 1, 
+      y: 0, 
+      filter: 'blur(0px)',
+      transition: { 
+        duration: 0.8, 
+        ease: [0.16, 1, 0.3, 1] 
+      } 
+    },
+  };
+
   return (
-    <div className="relative z-20 flex-1 w-full max-w-[1400px] mx-auto flex flex-col xl:flex-row items-center xl:items-start justify-center xl:justify-between px-6 sm:px-10 lg:px-16 py-12 lg:py-20 gap-12 xl:gap-20 animate-in fade-in zoom-in-95 duration-700">
+    <motion.div 
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+      className="relative z-20 flex-1 w-full max-w-[1400px] mx-auto flex flex-col xl:flex-row items-center xl:items-start justify-center xl:justify-between px-6 sm:px-10 lg:px-16 py-12 lg:py-20 gap-12 xl:gap-20"
+    >
       
       {/* Left Column: AI Details & Models */}
       <div className="flex-1 flex flex-col items-start text-left space-y-10 max-w-3xl pt-4">
         
         {/* Core AI Detail Hero */}
         <div className="space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono font-semibold uppercase tracking-widest backdrop-blur-md">
-            <Sparkles className="w-3.5 h-3.5" />
+          <motion.div variants={itemVariants} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono font-semibold uppercase tracking-widest backdrop-blur-md shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+            <Sparkles className="w-3.5 h-3.5 animate-pulse" />
             <span>Ares Neural Core v2.4</span>
-          </div>
+          </motion.div>
 
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/40 tracking-tight leading-[1.05]">
+          <motion.h1 variants={itemVariants} className="font-display text-5xl sm:text-6xl lg:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/40 tracking-tight leading-[1.05]">
             Deep-Space <br />
-            <span className="text-amber-500">AI Intelligence.</span>
-          </h1>
+            <span className="text-amber-500 text-glow-amber drop-shadow-xl">AI Intelligence.</span>
+          </motion.h1>
 
-          <p className="text-lg lg:text-xl text-slate-400 leading-relaxed max-w-2xl font-sans">
+          <motion.p variants={itemVariants} className="text-lg lg:text-xl text-slate-400 leading-relaxed max-w-2xl font-sans font-light">
             Access state-of-the-art multimodal reasoning, lightning-fast edge inference, and spatial vision models directly from the Martian gateway. Engineered for zero-latency planetary relay.
-          </p>
+          </motion.p>
         </div>
 
         {/* Model Options Showcase */}
-        <div className="w-full pt-4">
+        <motion.div variants={itemVariants} className="w-full pt-4">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-sm font-mono text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <BrainCircuit className="w-4 h-4 text-emerald-400" /> Available Neural Models
@@ -105,11 +135,11 @@ export function HomePage({
               <p className="text-sm text-slate-400 leading-relaxed">Specialized spatial vision model for analyzing terrain and atmospheric scans.</p>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
 
       {/* Right Column: Key Generator (Get API) */}
-      <div className="w-full xl:w-auto flex justify-center xl:justify-end shrink-0 xl:mt-8">
+      <motion.div variants={itemVariants} className="w-full xl:w-auto flex justify-center xl:justify-end shrink-0 xl:mt-8">
         <div className="relative">
           {/* Subtle glow behind the card for visual hierarchy */}
           <div className="absolute -inset-4 bg-amber-500/10 blur-3xl rounded-full pointer-events-none opacity-50"></div>
@@ -120,8 +150,8 @@ export function HomePage({
             onOpenPlayground={handleOpenPlayground}
           />
         </div>
-      </div>
+      </motion.div>
 
-    </div>
+    </motion.div>
   );
 }

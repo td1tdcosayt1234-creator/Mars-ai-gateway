@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Orbit, Fingerprint, Lock, ArrowRight } from 'lucide-react';
 import { playTerminalBlip } from '../utils/sound';
+import { motion } from 'motion/react';
 
 export function LoginPage() {
   const [accessCode, setAccessCode] = useState('');
@@ -21,8 +22,13 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex-1 w-full flex items-center justify-center p-6 animate-in fade-in zoom-in-95 duration-500">
-      <div className="w-full max-w-md p-8 rounded-3xl bg-black/60 border border-white/10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
+      animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+      className="flex-1 w-full flex items-center justify-center p-6"
+    >
+      <div className="w-full max-w-md p-8 rounded-3xl bg-black/60 border border-white/10 backdrop-blur-xl shadow-[0_0_50px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(255,255,255,0.05)] relative overflow-hidden">
         {/* Decorative corner accents */}
         <div className="absolute top-0 left-0 w-16 h-16 border-t-2 border-l-2 border-amber-500/20 rounded-tl-3xl" />
         <div className="absolute bottom-0 right-0 w-16 h-16 border-b-2 border-r-2 border-cyan-500/20 rounded-br-3xl" />
@@ -32,7 +38,7 @@ export function LoginPage() {
             <Orbit className="w-8 h-8 text-amber-400 animate-[spin_12s_linear_infinite]" />
             <div className="absolute w-2 h-2 rounded-full bg-amber-300 shadow-[0_0_8px_#fbbf24]" />
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Gateway Access</h2>
+          <h2 className="text-3xl font-bold text-white tracking-tight font-display drop-shadow-md">Gateway Access</h2>
           <p className="text-slate-400 text-sm mt-1 font-mono">Olympus Mons Command Hub</p>
         </div>
 
@@ -77,6 +83,6 @@ export function LoginPage() {
           </p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
