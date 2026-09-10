@@ -20,6 +20,7 @@ import { HomePage } from './pages/HomePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ModelsPage } from './pages/ModelsPage';
 import { LoginPage } from './pages/LoginPage';
+import { AIGovernance } from './components/AIGovernance';
 import {
   isSessionValid,
   clearSession,
@@ -308,6 +309,11 @@ export default function App() {
             </ProtectedRoute>
           } />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/governance" element={
+            <ProtectedRoute>
+              <AIGovernance />
+            </ProtectedRoute>
+          } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
