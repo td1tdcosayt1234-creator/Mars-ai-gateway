@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Terminal, Activity, Orbit, Volume2, VolumeX, Sparkles, Box, LogIn, LayoutDashboard } from 'lucide-react';
+import { Orbit, Volume2, VolumeX, Sparkles, Box, LogIn, LogOut, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import { playTerminalBlip } from '../utils/sound';
+import { isSessionValid, clearSession, auditLog } from '../utils/security';
 
 interface TopNavProps {
   onOpenNewKeyModal: () => void;
@@ -18,6 +19,13 @@ export const TopNav: React.FC<TopNavProps> = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    setAuthed(isSessionValid());
+    const id = setInterval(()=> setAuthed(isSessionValid()), 5000);
+    return ()=> clearInterval(id);
+  }, [location.pathname]);
 
   const getLinkClass = (path: string) => {
     const isActive = location.pathname === path;
@@ -26,9 +34,16 @@ export const TopNav: React.FC<TopNavProps> = ({
     }`;
   };
 
+  const handleLogout = () => {
+    playTerminalBlip(600);
+    clearSession();
+    auditLog('logout', 'nav logout');
+    setAuthed(false);
+    navigate('/login');
+  };
+
   return (
     <header className="relative z-30 flex items-center justify-between px-6 md:px-12 py-6 w-full">
-      {/* Brand Logo */}
       <Link 
         to="/"
         onClick={() => playTerminalBlip(600)}
@@ -46,63 +61,57 @@ export const TopNav: React.FC<TopNavProps> = ({
             <span className="px-1.5 py-0.5 text-[10px] uppercase font-mono tracking-wider font-semibold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
               Mars-Relay
             </span>
+            {authed && <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"><ShieldCheck className="w-3 h-3" />Secured</span>}
           </div>
           <p className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Sol 782 · 14ms Local Relay
+            Sol 782 · 14ms Local Relay {authed ? `· ${keysCount} keys` : ''}
           </p>
         </div>
       </Link>
 
-      {/* Navigation Links */}
       <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
-        <Link to="/" onClick={() => playTerminalBlip(700)} className={getLinkClass('/')}>
-          Home
-        </Link>
+        <Link to="/" onClick={() => playTerminalBlip(700)} className={getLinkClass('/')}>Home</Link>
         <Link to="/models" onClick={() => playTerminalBlip(720)} className={getLinkClass('/models')}>
-          <Box className="w-4 h-4 text-amber-400" />
-          Models
+          <Box className="w-4 h-4 text-amber-400" />Models
         </Link>
         <Link to="/dashboard" onClick={() => playTerminalBlip(750)} className={getLinkClass('/dashboard')}>
-          <LayoutDashboard className="w-4 h-4 text-cyan-400" />
-          Dashboard
+          <LayoutDashboard className="w-4 h-4 text-cyan-400" />Dashboard
         </Link>
       </nav>
 
-      {/* Right Action buttons */}
       <div className="flex items-center gap-3">
-        {/* Audio atmosphere toggle */}
         <button
           onClick={onToggleAudio}
           title={audioActive ? 'Mute Mars atmospheric audio' : 'Play Mars deep space hum'}
           className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all"
         >
-          {audioActive ? (
-            <Volume2 className="w-4 h-4 text-amber-400 animate-pulse" />
-          ) : (
-            <VolumeX className="w-4 h-4 text-slate-400" />
-          )}
+          {audioActive ? <Volume2 className="w-4 h-4 text-amber-400 animate-pulse" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
         </button>
 
-        <button
-          onClick={() => {
-            playTerminalBlip(900);
-            navigate('/login');
-          }}
-          className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all flex items-center gap-2"
-          title="Login"
-        >
-          <LogIn className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-semibold hidden lg:inline">Login</span>
-        </button>
+        {authed ? (
+          <button
+            onClick={handleLogout}
+            className="p-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 hover:text-red-200 transition-all flex items-center gap-2"
+            title="Secure Logout"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="text-xs font-semibold hidden lg:inline">Logout</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => { playTerminalBlip(900); navigate('/login'); }}
+            className="p-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all flex items-center gap-2"
+            title="Login"
+          >
+            <LogIn className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-semibold hidden lg:inline">Login</span>
+          </button>
+        )}
 
-        {/* Primary CTA */}
         <button
           id="btn-request-key-top"
-          onClick={() => {
-            playTerminalBlip(950);
-            onOpenNewKeyModal();
-          }}
+          onClick={() => { playTerminalBlip(950); onOpenNewKeyModal(); }}
           className="relative px-6 py-2.5 rounded-full bg-white text-neutral-950 font-semibold text-sm hover:bg-slate-100 active:scale-95 transition-all shadow-[0_0_25px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] flex items-center gap-2 cursor-pointer"
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-600" />
