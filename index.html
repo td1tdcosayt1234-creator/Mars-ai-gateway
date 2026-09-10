@@ -3,12 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ares AI Gateway - Mars Deep Space API Relay</title>
-    <meta name="description" content="Deep space AI API key gateway on Mars featuring an interactive terminal interface for managing key requests and real-time usage metrics." />
+    <!-- Security Headers -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), payment=(), usb=()" />
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin" />
+    <meta http-equiv="Cross-Origin-Resource-Policy" content="same-origin" />
+    <!-- Content Security Policy - hardened -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; media-src 'self' blob:; connect-src 'self' https://api.github.com https://generativelanguage.googleapis.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests" />
+    <title>Ares AI Gateway - Mars Deep Space API Relay | Secure Edition</title>
+    <meta name="description" content="Deep space AI API key gateway on Mars featuring an interactive terminal interface for managing key requests and real-time usage metrics. Hardened with AES-GCM encryption, rate limiting, and strict CSP." />
     <meta property="og:title" content="Ares AI Gateway - Mars Deep Space API Relay" />
     <meta property="og:description" content="Deep space AI API key gateway on Mars featuring an interactive terminal interface for managing key requests and real-time usage metrics." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <!-- Security: no referrer leaking for cross-origin -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,6 +27,13 @@
   <body class="bg-[#060408] text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <noscript>
+      <div style="position:fixed;inset:0;background:#060408;color:#fff;display:flex;align-items:center;justify-content:center;font-family:monospace;padding:2rem;text-align:center;">
+        <div>
+          <h1 style="color:#f59e0b;">Security Requirement</h1>
+          <p>Mars Gateway requires JavaScript enabled with secure context (HTTPS) for AES-GCM encryption and session protection.</p>
+        </div>
+      </div>
+    </noscript>
   </body>
 </html>
-
