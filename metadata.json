@@ -1,0 +1,6 @@
+{
+  "name": "Ares AI Gateway - Mars Deep Space API Relay",
+  "description": "Deep space AI API key gateway on Mars featuring an interactive terminal interface for managing key requests and real-time usage metrics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
