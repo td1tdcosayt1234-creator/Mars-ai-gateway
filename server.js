@@ -20,6 +20,8 @@ import { superHeaders, uaAnomaly, ipReputation } from './server/middleware/super
 import { tier1Perimeter, internalHmacSign } from './server/middleware/tier1Perimeter.js';
 import { tier2Guard } from './server/middleware/tier2Core.js';
 import twoFactorRouter from './server/routes/twoFactor.js';
+import { tier3Vault } from './server/middleware/tier3DeepVault.js';
+import deepVaultRouter from './server/routes/deepVault.js';
 import oauthRouter from './server/routes/oauth.js';
 import aiGateway from './server/routes/aiGateway.js';
 import { aiFirewall } from './server/middleware/aiFirewall.js';
@@ -257,6 +259,7 @@ function recordBrute(ip, success){
 // ---------------------------------------------------------------------------
 app.use('/api/auth/oauth', oauthRouter);
 app.use('/api/2fa', twoFactorRouter);
+app.use('/api/vault', deepVaultRouter);
 app.get('/api/chain/verify', authenticate, (req,res)=> res.json(verifyChain()));
 app.get('/api/health', (req,res)=>{
   res.json({ status:'ok', uptime: process.uptime(), sol: 782, secure: true, csp: 'enabled', hsts: 'enabled' });
