@@ -21,6 +21,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ModelsPage } from './pages/ModelsPage';
 import { LoginPage } from './pages/LoginPage';
 import { AIGovernance } from './components/AIGovernance';
+import { ThreeTierPanel } from './components/ThreeTierPanel';
 import {
   isSessionValid,
   clearSession,
@@ -309,6 +310,7 @@ export default function App() {
             </ProtectedRoute>
           } />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/vault" element={<ProtectedRoute><ThreeTierPanel /></ProtectedRoute>} />
           <Route path="/governance" element={
             <ProtectedRoute>
               <AIGovernance />
