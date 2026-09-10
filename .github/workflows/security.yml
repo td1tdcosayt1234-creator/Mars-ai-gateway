@@ -1,0 +1,77 @@
+name: Security Hardening CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1' # weekly
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript-typescript']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
+
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm audit --audit-level=moderate || true
+      - run: npx --yes audit-ci --moderate || true
+
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  headers-check:
+    name: Security Headers Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify CSP in index.html
+        run: |
+          grep -q "Content-Security-Policy" index.html || (echo "CSP missing" && exit 1)
+          grep -q "X-Content-Type-Options" index.html || (echo "nosniff missing" && exit 1)
+          grep -q "X-Frame-Options" index.html || (echo "XFO missing" && exit 1)
+          echo "Headers OK"
+      - name: Verify security utils
+        run: |
+          test -f src/utils/security.ts || (echo "security.ts missing" && exit 1)
+          grep -q "secureRandomHex" src/utils/security.ts || (echo "secure RNG missing" && exit 1)
+          grep -q "PBKDF2" src/utils/security.ts || (echo "PBKDF2 missing" && exit 1)
+          echo "Security utils OK"
