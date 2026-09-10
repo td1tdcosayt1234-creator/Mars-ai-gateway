@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: mars-ai-gateway
+    runtime: node
+    region: singapore
+    plan: free
+    branch: main
+    repo: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES
+        value: 30m
+      - key: APP_URL
+        value: https://mars-ai-gateway-free.onrender.com
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+  - type: static_site
+    name: mars-ai-gateway-static
+    branch: main
+    repo: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway
+    buildCommand: npm install && npm run build
+    publishPath: dist
+    autoDeploy: true
