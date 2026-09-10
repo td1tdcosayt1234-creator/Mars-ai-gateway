@@ -4,6 +4,38 @@ import fs from 'fs';
 import path from 'path';
 import {defineConfig, Plugin} from 'vite';
 
+// Security headers middleware for dev & preview - defense in depth
+function securityHeadersPlugin(): Plugin {
+  return {
+    name: 'vite-plugin-security-headers',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+        res.setHeader('X-XSS-Protection', '0'); // Disable old XSS auditor, rely on CSP
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+        res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+        // Strict CSP for dev (allows vite HMR)
+        const csp = [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com",
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
+          "font-src 'self' https://fonts.gstatic.com data:",
+          "img-src 'self' data: https: blob:",
+          "connect-src 'self' ws: wss: https://api.github.com https://generativelanguage.googleapis.com",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+          "object-src 'none'",
+        ].join('; ');
+        res.setHeader('Content-Security-Policy', csp);
+        next();
+      });
+    },
+  };
+}
+
 // LINT.IfChange(aistudio_media_plugin)
 function aistudioMediaPlugin(): Plugin {
   return {
@@ -22,11 +54,22 @@ function aistudioMediaPlugin(): Plugin {
               'aistudio',
             );
             const filePath = path.resolve(__dirname, 'public', relativePath);
+            // Path traversal protection: strict prefix check + realpath
+            const realAistudio = fs.realpathSync(aistudioDir, { encoding: 'utf8' } as any) || aistudioDir;
+            // Ensure requested path is inside allowed directory
             if (
-              filePath.startsWith(aistudioDir + path.sep) &&
+              !filePath.startsWith(aistudioDir + path.sep) ||
+              !filePath.startsWith(realAistudio + path.sep)
+            ) {
+              res.statusCode = 403;
+              res.end('Forbidden');
+              return;
+            }
+            if (
               fs.existsSync(filePath) &&
               fs.statSync(filePath).isFile()
             ) {
+              // Additional MIME validation - only allow listed types
               const ext = path.extname(filePath).toLowerCase();
               const mimeMap: Record<string, string> = {
                 '.jpg': 'image/jpeg',
@@ -45,16 +88,25 @@ function aistudioMediaPlugin(): Plugin {
                 '.ogg': 'audio/ogg',
                 '.pdf': 'application/pdf',
               };
-              res.setHeader(
-                'Content-Type',
-                mimeMap[ext] || 'application/octet-stream',
-              );
+              const mime = mimeMap[ext];
+              if (!mime) {
+                res.statusCode = 415;
+                res.end('Unsupported Media Type');
+                return;
+              }
+              res.setHeader('Content-Type', mime);
               res.setHeader('Cache-Control', 'no-cache');
+              res.setHeader('X-Content-Type-Options', 'nosniff');
+              // Prevent clickjacking for media
+              res.setHeader('X-Frame-Options', 'DENY');
               fs.createReadStream(filePath).pipe(res);
               return;
             }
           } catch {
             // Fall through if URI decoding or file access fails
+            res.statusCode = 400;
+            res.end('Bad Request');
+            return;
           }
         }
         next();
@@ -66,18 +118,29 @@ function aistudioMediaPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), aistudioMediaPlugin()],
+    plugins: [react(), tailwindcss(), aistudioMediaPlugin(), securityHeadersPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+      },
+    },
+    preview: {
+      headers: {
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+      },
+    },
+    build: {
+      sourcemap: false, // Don't expose sourcemaps in production
     },
   };
 });
