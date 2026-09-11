@@ -4,6 +4,7 @@ import express from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
+import { safeFetch } from '../utils/upstream.js';
 
 const router=express.Router();
 const JWT_SECRET = config.jwtSecret;
@@ -25,7 +26,7 @@ function genState(){
 }
 function makeJWT(user){
   const jti=crypto.randomUUID();
-  return jwt.sign({ sub:user.id, email:user.email, provider:user.provider, jti, fp:user.fp }, JWT_SECRET, { expiresIn: '30m' });
+  return jwt.sign({ sub:user.id, email:user.email, provider:user.provider, jti, fp:user.fp, iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: '30m' });
 }
 
 // Initiate GitHub
@@ -41,16 +42,16 @@ router.get('/github/callback', async (req,res)=>{
   stateStore.delete(state);
   if(!code) return res.status(400).send('Missing code');
   try{
-    const tokenRes=await fetch('https://github.com/login/oauth/access_token', {
+    const tokenRes=await safeFetch('https://github.com/login/oauth/access_token', {
       method:'POST',
       headers:{ 'Accept':'application/json', 'Content-Type':'application/json' },
       body: JSON.stringify({ client_id: GH_ID, client_secret: GH_SECRET, code, redirect_uri: APP_URL + '/api/auth/oauth/github/callback', state })
     });
     const tok=await tokenRes.json();
     if(tok.error) throw new Error(tok.error_description);
-    const userRes=await fetch('https://api.github.com/user', { headers:{ Authorization:`Bearer ${tok.access_token}`, 'User-Agent':'Mars-Gateway' }});
+    const userRes=await safeFetch('https://api.github.com/user', { headers:{ Authorization:`Bearer ${tok.access_token}`, 'User-Agent':'Mars-Gateway' }});
     const user=await userRes.json();
-    const emailRes=await fetch('https://api.github.com/user/emails', { headers:{ Authorization:`Bearer ${tok.access_token}`, 'User-Agent':'Mars-Gateway' }});
+    const emailRes=await safeFetch('https://api.github.com/user/emails', { headers:{ Authorization:`Bearer ${tok.access_token}`, 'User-Agent':'Mars-Gateway' }});
     const emails=await emailRes.json();
     const primary=Array.isArray(emails)? emails.find(e=>e.primary)?.email : null;
     const profile={ id:`gh_${user.id}`, email: primary||user.email||`${user.login}@github.local`, name: user.name||user.login, provider:'github', avatar:user.avatar_url, fp: req.fp };
@@ -82,14 +83,14 @@ router.get('/google/callback', async (req,res)=>{
   const cookieVerifier=req.cookies?.pkce_verifier || verifier;
   if(!code) return res.status(400).send('Missing code');
   try{
-    const tokenRes=await fetch('https://oauth2.googleapis.com/token', {
+    const tokenRes=await safeFetch('https://oauth2.googleapis.com/token', {
       method:'POST',
       headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ client_id: GO_ID, client_secret: GO_SECRET, code, grant_type:'authorization_code', redirect_uri: APP_URL + '/api/auth/oauth/google/callback', code_verifier: cookieVerifier })
     });
     const tok=await tokenRes.json();
     if(tok.error) throw new Error(tok.error_description||tok.error);
-    const idRes=await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers:{ Authorization:`Bearer ${tok.access_token}` }});
+    const idRes=await safeFetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers:{ Authorization:`Bearer ${tok.access_token}` }});
     const user=await idRes.json();
     const profile={ id:`go_${user.id}`, email:user.email, name:user.name, provider:'google', avatar:user.picture, fp: req.fp };
     const jwtToken=makeJWT(profile);
@@ -109,7 +110,7 @@ router.get('/me', (req,res)=>{
   const tok=auth.startsWith('Bearer ')? auth.slice(7) : req.cookies?.ares_token;
   if(!tok) return res.status(401).json({ error:'No token' });
   try{
-    const p=jwt.verify(tok, JWT_SECRET);
+    const p=jwt.verify(tok, JWT_SECRET, { issuer: config.jwtIssuer, audience: config.jwtAudience });
     res.json({ user: p });
   }catch{ res.status(401).json({ error:'Invalid token' }); }
 });

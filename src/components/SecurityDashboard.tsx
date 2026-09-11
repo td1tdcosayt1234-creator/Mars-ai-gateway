@@ -4,12 +4,22 @@ export function SecurityDashboard(){
   const [audit,setAudit]=useState<any[]>([]);
   const [checks,setChecks]=useState({csp:true, hsts:true, jwt:true, rate:true});
   useEffect(()=>{
-    fetch('/api/audit', { headers: { Authorization: `Bearer ${localStorage.getItem('ares_jwt')||''}` }}).then(r=>r.json()).then(d=> setAudit(d.audit||[])).catch(()=>{});
-    setChecks({
-      csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'),
-      hsts: location.protocol==='https:',
-      jwt: !!localStorage.getItem('ares_jwt'),
-      rate: true,
+    fetch('/api/audit/mine', { credentials:'include' }).then(r=>r.json()).then(d=> setAudit(d.audit||[])).catch(()=>{});
+    fetch('/api/auth/verify', { credentials:'include' }).then(r=>{
+      const sessionOk = r.ok;
+      setChecks({
+        csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'),
+        hsts: location.protocol==='https:',
+        jwt: sessionOk,
+        rate: true,
+      });
+    }).catch(()=>{
+      setChecks({
+        csp: !!document.querySelector('meta[http-equiv="Content-Security-Policy"]'),
+        hsts: location.protocol==='https:',
+        jwt: false,
+        rate: true,
+      });
     });
   },[]);
   return (

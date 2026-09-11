@@ -53,6 +53,9 @@ describe('tier HMAC (no bypass)', () => {
     const c = read('server/middleware/tier2Core.js');
     assert.ok(c.includes("createHmac('sha256'") && c.includes('timingSafeEqual'));
     assert.ok(!c.includes('presence only'));
+    // Router-proof: both sides use originalUrl (req.path is stripped by mounts)
+    assert.ok(c.includes('originalUrl'));
+    assert.ok(read('server/middleware/tier1Perimeter.js').includes('originalUrl'));
   });
   it('tier1 uses single timestamp for payload+header', () => {
     const c = read('server/middleware/tier1Perimeter.js');
@@ -116,6 +119,60 @@ describe('transport/session (no exfil)', () => {
   it('Express5 SPA fallback uses regex, not *', () => {
     assert.ok(read('server.js').includes('app.get(/.*/'));
     assert.ok(!read('server.js').includes("app.get('*'"));
+  });
+});
+
+describe('session 20x (bind, revoke, rotate)', () => {
+  it('JWT iss/aud enforced + fingerprint binding + denylist', () => {
+    const a = read('server/middleware/auth.js');
+    assert.ok(a.includes('jwtIssuer') && a.includes('jwtAudience'));
+    assert.ok(a.includes('issuer:') && a.includes('audience:'));
+    assert.ok(a.includes('fingerprint') && a.includes('timingSafeEqual'));
+    assert.ok(a.includes('isDenied') && a.includes('Token revoked'));
+    assert.ok(read('server/utils/denylist.js').includes('denylist.json'));
+    assert.ok(read('server.js').includes('/api/auth/refresh') && read('server.js').includes('/api/auth/logout-all'));
+  });
+  it('CSRF Origin check + constant-time compare + no-store secrets', () => {
+    const a = read('server/middleware/auth.js');
+    assert.ok(a.includes('Origin not allowed') && a.includes('noStore'));
+    assert.ok(read('server.js').includes("noStore") && read('server.js').includes('/api/vault'));
+  });
+  it('audit scoped: full log admin-only, /mine for users', () => {
+    const s = read('server.js');
+    assert.ok(s.includes('/api/audit/mine') && s.includes('Admin only'));
+  });
+  it('slowloris timeouts + originAgentCluster + SSRF allowlist', () => {
+    const s = read('server.js');
+    assert.ok(s.includes('headersTimeout') && s.includes('requestTimeout') && s.includes('originAgentCluster'));
+    assert.ok(read('server/utils/upstream.js').includes('allowedUpstreams'));
+    assert.ok(read('server/routes/oauth.js').includes('safeFetch'));
+  });
+  it('issued tokens carry iss/aud and verify enforces them', async () => {
+    const { signToken, verifyToken } = await import('../server/middleware/auth.js');
+    const { config } = await import('../server/config.js');
+    const jwt = await import('jsonwebtoken');
+    const t = signToken({ ip: '127.0.0.1', fp: 'testfp1234567890' });
+    const p = verifyToken(t);
+    assert.ok(p.iss && p.aud && p.jti);
+    assert.equal(p.iss, config.jwtIssuer);
+    assert.throws(() => jwt.default.verify(t, config.jwtSecret, { issuer: 'wrong-issuer' }));
+  });
+});
+
+describe('dashboard 20x (backend-live, no localStorage JWT)', () => {
+  it('panels use cookie auth, audit via /mine', () => {
+    for (const f of ['src/components/TwoFactorPanel.tsx', 'src/components/ThreeTierPanel.tsx', 'src/components/AIGovernance.tsx', 'src/components/SecurityDashboard.tsx']) {
+      assert.ok(!read(f).includes('ares_jwt'), `${f} must not read ares_jwt`);
+    }
+    assert.ok(read('src/components/AIGovernance.tsx').includes('/api/audit/mine'));
+    assert.ok(read('src/components/SecurityDashboard.tsx').includes('/api/auth/verify'));
+  });
+  it('dashboard tabs + backend keys + 401 auto-logout + key autohide', () => {
+    const d = read('src/pages/DashboardPage.tsx');
+    assert.ok(d.includes('ApiKeysTab') && d.includes('SecurityTab') && d.includes('VaultAuditTab'));
+    assert.ok(read('src/components/dashboard/ApiKeysTab.tsx').includes('listKeysBackend'));
+    assert.ok(read('src/App.tsx').includes('ares:unauthorized'));
+    assert.ok(read('src/components/KeyGeneratorCard.tsx').includes('auto-hide') || read('src/components/KeyGeneratorCard.tsx').includes('shown once'));
   });
 });
 

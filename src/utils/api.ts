@@ -75,6 +75,47 @@ export async function logoutBackend(): Promise<void> {
   setToken(null);
 }
 
+export async function refreshBackend(): Promise<boolean> {
+  try {
+    const res = await secureFetch('/auth/refresh', { method: 'POST' });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => ({}));
+    if (data.token) setToken(data.token);
+    return true;
+  } catch { return false; }
+}
+
+export async function logoutAllBackend(jtis: string[] = []): Promise<void> {
+  try { await secureFetch('/auth/logout-all', { method: 'POST', body: JSON.stringify({ jtis }) }); } catch {}
+  setToken(null);
+}
+
+export async function fetchSession(): Promise<{ valid: boolean; exp?: number; user?: any }> {
+  try {
+    const res = await secureFetch('/auth/verify');
+    if (!res.ok) return { valid: false };
+    const data = await res.json().catch(() => ({}));
+    return { valid: !!data.valid, exp: data.exp, user: data.user };
+  } catch { return { valid: false }; }
+}
+
+export async function fetchMyAudit(): Promise<any[]> {
+  try {
+    const res = await secureFetch('/audit/mine');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.audit || [];
+  } catch { return []; }
+}
+
+export async function fetchChainVerify(): Promise<any> {
+  try {
+    const res = await secureFetch('/chain/verify');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
 export async function generateKeyBackend(tier: string, relayZone: string, name?: string) {
   const cleanName = sanitizeInput(name || '', 64);
   const res = await secureFetch('/keys', {

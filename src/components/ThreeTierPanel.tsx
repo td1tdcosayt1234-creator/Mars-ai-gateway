@@ -3,7 +3,7 @@ import { Shield, Layers, Database, Timer } from 'lucide-react';
 export function ThreeTierPanel(){
   const [s,setS]=useState<any>(null);
   useEffect(()=>{
-    fetch('/api/vault/status', { headers:{ Authorization:`Bearer ${localStorage.getItem('ares_jwt')||''}` }}).then(r=>r.json()).then(d=> setS(d)).catch(()=> setS({error:'Need Tier2 2FA + Tier1'}));
+    fetch('/api/vault/status', { credentials:'include' }).then(r=>r.json()).then(d=> setS(d)).catch(()=> setS({error:'Need Tier2 2FA + Tier1'}));
   },[]);
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">

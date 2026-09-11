@@ -3,6 +3,7 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
+import { isDenied } from '../utils/denylist.js';
 
 const JWT_SECRET = config.jwtSecret;
 const TIER_HMAC = config.tierHmac;
@@ -22,7 +23,10 @@ export function tier2Guard(req,res,next){
   if(!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > 30*1000){
     return res.status(403).json({ error:'Tier2: Invalid Tier1 signature', tier:2 });
   }
-  const expected = crypto.createHmac('sha256', TIER_HMAC).update(`${req.method}:${req.path}:${ts}`).digest('hex');
+  // originalUrl: mounted routers strip req.url/req.path — originalUrl is stable
+  let p = req.originalUrl || req.url || req.path;
+  try { p = new URL(p, 'http://internal').pathname; } catch {}
+  const expected = crypto.createHmac('sha256', TIER_HMAC).update(`${req.method}:${p}:${ts}`).digest('hex');
   if(expected.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))){
     return res.status(403).json({ error:'Tier2: Invalid Tier1 signature', tier:2 });
   }
@@ -32,7 +36,8 @@ export function tier2Guard(req,res,next){
   const tok=auth.startsWith('Bearer ')? auth.slice(7): req.cookies?.ares_token;
   if(!tok) return res.status(401).json({ error:'Tier2: No vault token', tier:2 });
   try{
-    const p=jwt.verify(tok, JWT_SECRET);
+    const p=jwt.verify(tok, JWT_SECRET, { issuer: config.jwtIssuer, audience: config.jwtAudience });
+    if(isDenied(p.jti)) return res.status(401).json({ error:'Tier2: Token revoked', tier:2 });
     req.user=p;
   }catch{
     return res.status(401).json({ error:'Tier2: Vault token invalid', tier:2 });

@@ -113,12 +113,20 @@ export default function App() {
     })();
   }, [keys, keysLoaded]);
 
-  // Session activity tracking + auto logout
+  // Session activity tracking + auto logout (+ backend 401 auto-logout)
   useEffect(() => {
     setupActivityTracking(() => {
       // auto expire handler
       auditLog('session_expired', 'inactivity timeout');
     });
+    const onUnauthorized = () => {
+      clearSession();
+      auditLog('logout_401', 'backend rejected session');
+      if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+        window.location.href = '/login';
+      }
+    };
+    window.addEventListener('ares:unauthorized', onUnauthorized);
     const id = setInterval(() => {
       if (!isSessionValid() && window.location.pathname !== '/login' && window.location.pathname !== '/') {
         // If session expired while on protected page, force redirect
@@ -128,7 +136,10 @@ export default function App() {
         }
       }
     }, 30000);
-    return () => clearInterval(id);
+    return () => {
+      window.removeEventListener('ares:unauthorized', onUnauthorized);
+      clearInterval(id);
+    };
   }, []);
 
   // Real-time metrics streaming engine (1.5s)
@@ -303,6 +314,7 @@ export default function App() {
                 keys={keys}
                 handleOpenPlayground={handleOpenPlayground}
                 setIsTerminalOpen={setIsTerminalOpen}
+                onLogout={handleLogout}
               />
             </ProtectedRoute>
           } />

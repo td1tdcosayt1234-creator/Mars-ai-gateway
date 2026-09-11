@@ -74,6 +74,14 @@ export const config = {
   allowOrigins: [process.env.APP_URL, 'http://localhost:3000', 'http://localhost:5173'].filter(Boolean),
   tierHmac,
   masterKey,
+  jwtIssuer: process.env.JWT_ISSUER || 'mars-gateway',
+  jwtAudience: process.env.JWT_AUDIENCE || 'mars-clients',
+  // SSRF allowlist for server-side fetches (OAuth + future LLM upstream).
+  // Any fetch to other hosts must be rejected via assertUpstream().
+  allowedUpstreams: new Set(
+    (process.env.ALLOWED_UPSTREAMS || 'github.com,api.github.com,accounts.google.com,oauth2.googleapis.com,www.googleapis.com,generativelanguage.googleapis.com')
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+  ),
   authCodeHashes: parseCodeHashes(),
   honeyTokens: new Set(
     (process.env.HONEY_TOKENS || '').split(',').map(s => s.trim()).filter(Boolean)

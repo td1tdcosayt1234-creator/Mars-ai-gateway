@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SlidersHorizontal, Cpu, Radio, Zap, Copy, Check, Terminal, ExternalLink, ShieldAlert } from 'lucide-react';
 import { ModelTier, RelayZone, ApiKeyRecord } from '../types';
 import { MODEL_TIER_CONFIG, RELAY_ZONES } from '../data/mockData';
@@ -22,6 +22,27 @@ export const KeyGeneratorCard: React.FC<KeyGeneratorCardProps> = ({
   const [copied, setCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibleSecs, setVisibleSecs] = useState(0);
+  const hideTimer = useRef<any>(null);
+
+  // Plaintext secrets auto-hide after 60s (shoulder-surfing defense)
+  useEffect(() => {
+    if (createdKey) {
+      setVisibleSecs(60);
+      if (hideTimer.current) clearInterval(hideTimer.current);
+      hideTimer.current = setInterval(() => {
+        setVisibleSecs((s) => {
+          if (s <= 1) {
+            if (hideTimer.current) clearInterval(hideTimer.current);
+            setCreatedKey(null);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    }
+    return () => { if (hideTimer.current) clearInterval(hideTimer.current); };
+  }, [createdKey?.id]);
 
   const tierInfo = MODEL_TIER_CONFIG[selectedTier];
   const relayInfo = RELAY_ZONES[selectedRelay];
@@ -106,7 +127,7 @@ export const KeyGeneratorCard: React.FC<KeyGeneratorCardProps> = ({
 
       {createdKey ? (
         <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center justify-between text-xs mb-1.5"><span className="font-semibold text-amber-300 flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-amber-400" />Key Ready — Encrypted at Rest</span><span className="text-[11px] text-slate-400 font-mono">Active</span></div>
+          <div className="flex items-center justify-between text-xs mb-1.5"><span className="font-semibold text-amber-300 flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-amber-400" />Key Ready — shown once ({visibleSecs}s)</span><span className="text-[11px] text-slate-400 font-mono">Active</span></div>
           <div className="flex items-center justify-between bg-black/60 rounded-xl px-3 py-2 border border-white/10 gap-2 mb-2.5">
             <code className="text-xs font-mono text-emerald-300 truncate select-all">{createdKey.key}</code>
             <button onClick={handleCopy} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors shrink-0" title="Copy to clipboard">{copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}</button>

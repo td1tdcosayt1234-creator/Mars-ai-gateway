@@ -6,13 +6,13 @@ export function TwoFactorPanel(){
   const [token,setToken]=useState('');
   const [msg,setMsg]=useState('');
   const setup=async()=>{
-    const r=await fetch('/api/2fa/setup', { method:'POST', headers:{ Authorization:`Bearer ${localStorage.getItem('ares_jwt')||''}` }});
+    const r=await fetch('/api/2fa/setup', { method:'POST', credentials:'include' });
     const d=await r.json();
     if(r.ok){ setSecret(d.secret); setUrl(d.otpauth_url); setMsg('Secret generated — add to Authenticator'); }
     else setMsg(d.error||'Failed');
   };
   const verify=async()=>{
-    const r=await fetch('/api/2fa/verify', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${localStorage.getItem('ares_jwt')||''}` }, body: JSON.stringify({ token })});
+    const r=await fetch('/api/2fa/verify', { method:'POST', headers:{ 'Content-Type':'application/json' }, credentials:'include', body: JSON.stringify({ token })});
     const d=await r.json();
     setMsg(r.ok? '✅ Tier2 Vault unlocked 10m' : '❌ '+d.error);
   };

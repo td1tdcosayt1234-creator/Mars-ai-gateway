@@ -4,7 +4,7 @@ export function AIGovernance(){
   const [events,setEvents]=useState<any[]>([]);
   const [quota,setQuota]=useState({ used:14829210, quota:50000000, rpm: 42 });
   useEffect(()=>{
-    fetch('/api/audit', { headers: { Authorization: `Bearer ${localStorage.getItem('ares_jwt')||''}` }}).then(r=>r.json()).then(d=>{
+    fetch('/api/audit/mine', { credentials:'include' }).then(r=>r.json()).then(d=>{
       setEvents((d.audit||[]).filter((a:any)=> a.action.includes('ai_gateway')||a.action.includes('firewall')).slice(-5));
     }).catch(()=>{});
   },[]);

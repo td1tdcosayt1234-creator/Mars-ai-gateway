@@ -19,6 +19,8 @@ import { secureStore } from './server/utils/secureStore.js';
 import { superHeaders, uaAnomaly, ipReputation } from './server/middleware/superSecurity.js';
 import { tier1Perimeter, internalHmacSign } from './server/middleware/tier1Perimeter.js';
 import { tier2Guard } from './server/middleware/tier2Core.js';
+import { authenticate as sharedAuthenticate, csrfCheck as sharedCsrfCheck, noStore, fingerprint } from './server/middleware/auth.js';
+import { deny, denyAll } from './server/utils/denylist.js';
 import twoFactorRouter from './server/routes/twoFactor.js';
 import { tier3Vault } from './server/middleware/tier3DeepVault.js';
 import deepVaultRouter from './server/routes/deepVault.js';
@@ -87,8 +89,8 @@ function isValidName(name){
   const s=sanitize(name,64);
   return s.length>=2 && s.length<=64 && /^[\w\s\-\.\(\)]+$/.test(s);
 }
-function addAudit(action, detail, ip){
-  auditLog.push({ ts: Date.now(), action: sanitize(action,64), detail: sanitize(detail,256), ip: ip?.slice(0,45) });
+function addAudit(action, detail, ip, user='-'){
+  auditLog.push({ ts: Date.now(), action: sanitize(action,64), detail: sanitize(detail,256), ip: ip?.slice(0,45), user: String(user).slice(0,32) });
   if(auditLog.length>200) auditLog.shift();
 }
 function generateSecureKey(){
@@ -130,6 +132,7 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   crossOriginOpenerPolicy: { policy: 'same-origin' },
   crossOriginResourcePolicy: { policy: 'same-origin' },
+  originAgentCluster: true,
 }));
 
 // CORS - strict allowlist (fail-closed in prod, no null-origin bypass for cookies)
@@ -161,6 +164,8 @@ app.use(auditMiddleware);
 app.use(guardPrototypePollution);
 app.use(xssGuard);
 app.use(strictJsonLimit);
+// Secrets must never sit in caches (auth/keys/2fa/vault)
+app.use(['/api/auth', '/api/keys', '/api/2fa', '/api/vault'], noStore);
 
 // Request ID + basic logging (sanitized)
 app.use((req,res,next)=>{
@@ -203,22 +208,9 @@ const keyGenLimiter = rateLimit({
 });
 
 // ---------------------------------------------------------------------------
-// AUTH MIDDLEWARE
+// AUTH MIDDLEWARE (shared with server/middleware/auth.js — single source of truth)
 // ---------------------------------------------------------------------------
-function authenticate(req,res,next){
-  const auth = req.headers.authorization || '';
-  const tokenFromHeader = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  const tokenFromCookie = req.cookies?.ares_token || null;
-  const token = tokenFromHeader || tokenFromCookie;
-  if(!token) return res.status(401).json({ error:'Missing token' });
-  try{
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
-    next();
-  }catch(e){
-    return res.status(401).json({ error:'Invalid or expired token' });
-  }
-}
+const authenticate = sharedAuthenticate;
 
 // Brute force check helper (additional to rateLimit, with lockout tracking)
 function checkBrute(ip){
@@ -277,37 +269,65 @@ app.post('/api/auth/login', loginLimiter, body('code').isString().trim().isLengt
   }
   recordBrute(ip,true);
   const jti=crypto.randomUUID();
-  const token=jwt.sign({ jti, ip, fp: crypto.createHash('sha256').update(req.headers['user-agent']||'').digest('hex').slice(0,16) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token=jwt.sign({ jti, ip, fp: fingerprint(req), iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
   // httpOnly secure cookie + json response (dual)
   const cookieOpts={ httpOnly:true, secure: NODE_ENV==='production', sameSite:'strict', maxAge: 30*60*1000, path:'/' };
   res.cookie('ares_token', token, cookieOpts);
   // CSRF token for state-changing (double submit)
   const csrf=crypto.randomBytes(32).toString('hex');
   res.cookie('csrf_token', csrf, { httpOnly:false, secure: NODE_ENV==='production', sameSite:'strict', path:'/' });
-  addAudit('login_success', `jti ${jti.slice(0,8)}`, ip);
+  addAudit('login_success', `jti ${jti.slice(0,8)}`, ip, jti.slice(0,8));
   res.json({ token, csrf, expiresIn: 30*60, user: { sol:782 } });
 });
 
 app.post('/api/auth/logout', (req,res)=>{
+  // Revoke Bearer too (cookies alone are not enough — denylist the jti)
+  try {
+    const auth = req.headers.authorization || '';
+    const t = auth.startsWith('Bearer ') ? auth.slice(7) : (req.cookies?.ares_token || null);
+    if (t) {
+      const p = jwt.decode(t);
+      if (p && p.jti) deny(p.jti, p.exp);
+    }
+  } catch {}
   res.clearCookie('ares_token', { path:'/' });
   res.clearCookie('csrf_token', { path:'/' });
-  addAudit('logout','user logout', getClientIp(req));
+  addAudit('logout','user logout', getClientIp(req), req.user?.jti?.slice(0,8) || '-');
   res.json({ ok:true });
+});
+
+// Rotation: old jti denylisted, new token bound to same fp. Requires CSRF when
+// cookie-authed (sharedCsrfCheck) + valid (non-denylisted) current token.
+app.post('/api/auth/refresh', authenticate, sharedCsrfCheck, (req,res)=>{
+  const old = req.user;
+  deny(old.jti, old.exp);
+  const jti=crypto.randomUUID();
+  const token=jwt.sign({ jti, sub: old.sub, ip: getClientIp(req), fp: fingerprint(req), iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const cookieOpts={ httpOnly:true, secure: NODE_ENV==='production', sameSite:'strict', maxAge: 30*60*1000, path:'/' };
+  res.cookie('ares_token', token, cookieOpts);
+  addAudit('token_refresh', `jti ${String(jti).slice(0,8)} from ${String(old.jti).slice(0,8)}`, getClientIp(req), String(jti).slice(0,8));
+  res.json({ token, expiresIn: 30*60 });
+});
+
+// Logout everywhere: revoke current + caller-supplied family jtis (from audit/mine)
+app.post('/api/auth/logout-all', authenticate, sharedCsrfCheck, body('jtis').optional().isArray({ max: 50 }), (req,res)=>{
+  const errors=validationResult(req);
+  if(!errors.isEmpty()) return res.status(400).json({ error:'Invalid input' });
+  const mine = Array.isArray(req.body.jtis) ? req.body.jtis.filter(j => typeof j === 'string') : [];
+  deny(req.user.jti, req.user.exp);
+  denyAll(mine);
+  res.clearCookie('ares_token', { path:'/' });
+  res.clearCookie('csrf_token', { path:'/' });
+  addAudit('logout_all','all sessions revoked', getClientIp(req), String(req.user.jti).slice(0,8));
+  res.json({ ok:true, revoked: 1 + mine.length });
 });
 
 app.get('/api/auth/verify', authenticate, (req,res)=>{
   res.json({ valid:true, user: req.user, exp: req.user.exp });
 });
 
-// CSRF check for state changing when using cookies
-function csrfCheck(req,res,next){
-  const csrfHeader=req.headers['x-csrf-token'];
-  const csrfCookie=req.cookies?.csrf_token;
-  // If Authorization Bearer used, skip CSRF (not cookie auth)
-  if(req.headers.authorization?.startsWith('Bearer ')) return next();
-  if(!csrfHeader || !csrfCookie || csrfHeader!==csrfCookie) return res.status(403).json({ error:'CSRF token mismatch' });
-  next();
-}
+// CSRF check for state changing when using cookies (shared, Origin+double-submit)
+const csrfCheck = sharedCsrfCheck;
 
 app.get('/api/keys', authenticate, (req,res)=>{
   res.json({ keys: apiKeys.listMasked() });
@@ -349,7 +369,7 @@ app.post('/api/keys', authenticate, keyGenLimiter, csrfCheck, [
     models, scopes:['chat:write','tokenize:write'], ipAllowlist, expiresAt
   };
   apiKeys.set(id, rec);
-  addAudit('key_gen', `${id} tier=${tier}`, getClientIp(req));
+  addAudit('key_gen', `${id} tier=${tier}`, getClientIp(req), String(req.user.jti).slice(0,8));
   // Plaintext returned once at creation only — list endpoint is masked
   res.status(201).json({ key: rec });
 });
@@ -362,7 +382,7 @@ app.delete('/api/keys/:id', authenticate, csrfCheck, param('id').isString().trim
   const k=apiKeys.get(id);
   if(!k) return res.status(404).json({ error:'Key not found' });
   apiKeys.revoke(k.id);
-  addAudit('key_revoke', id.slice(0,32), getClientIp(req));
+  addAudit('key_revoke', id.slice(0,32), getClientIp(req), String(req.user.jti).slice(0,8));
   res.json({ ok:true, id:k.id });
 });
 
@@ -385,8 +405,17 @@ app.get('/api/metrics', authenticate, (req,res)=>{
 });
 
 app.get('/api/audit', authenticate, (req,res)=>{
-  // only allow admin? For demo, allow any authed but limit
+  // Admin-only: full log contains other users' IPs. Others use /api/audit/mine.
+  const sub = req.user.sub || req.user.jti;
+  if(!sub || !config.adminSubjects.has(sub)) return res.status(403).json({ error:'Admin only' });
   res.json({ audit: auditLog.slice(-20) });
+});
+
+// Own entries only (user-scoped) — safe for every authenticated user
+app.get('/api/audit/mine', authenticate, (req,res)=>{
+  const me = String(req.user.jti).slice(0,8);
+  const mine = auditLog.filter(e => e.user === me).slice(-20);
+  res.json({ audit: mine, jti: me });
 });
 
 // ---------------------------------------------------------------------------
@@ -419,7 +448,11 @@ app.use((err,req,res,next)=>{
 });
 app.use((req,res)=> res.status(404).json({ error:'Not found' }));
 
-app.listen(PORT, '0.0.0.0', ()=>{
+const server = app.listen(PORT, '0.0.0.0', ()=>{
   console.log(`[MARS GATEWAY] Hardened backend listening on 0.0.0.0:${PORT} env=${NODE_ENV}`);
   console.log(`[SECURITY] Helmet CSP+HSTS enabled, rate limits active, JWT ${JWT_EXPIRES}, CORS allow ${allowOrigins.join(',')}`);
 });
+// Slowloris / hanging-socket defense (LLM10 + DoS)
+server.headersTimeout = 15000;
+server.requestTimeout = 30000;
+server.keepAliveTimeout = 15000;

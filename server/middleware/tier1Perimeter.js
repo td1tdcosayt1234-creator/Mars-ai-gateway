@@ -64,10 +64,13 @@ export function tier1Perimeter(req,res,next){
 
 export function internalHmacSign(req,res,next){
   // Tier1 → Tier2 internal HMAC (prevents bypassing Tier1).
-  // Single timestamp shared between payload and header so Tier2 can recompute.
+  // Uses originalUrl pathname (never stripped by mounted routers) + single
+  // timestamp shared between payload and header so Tier2 can recompute.
   const secret = config.tierHmac;
   const ts = String(Date.now());
-  const payload = `${req.method}:${req.path}:${ts}`;
+  let p = req.originalUrl || req.url || req.path;
+  try { p = new URL(p, 'http://internal').pathname; } catch {}
+  const payload = `${req.method}:${p}:${ts}`;
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   req.headers['x-tier1-sig'] = sig;
   req.headers['x-tier1-ts'] = ts;

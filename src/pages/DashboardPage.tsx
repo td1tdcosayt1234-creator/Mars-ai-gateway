@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Activity, Radio, Cpu, RefreshCw, Zap, TrendingUp, Clock, AlertTriangle, Key } from 'lucide-react';
+import { Activity, Radio, Cpu, RefreshCw, Zap, TrendingUp, Clock, AlertTriangle, Key, ShieldCheck, Layers } from 'lucide-react';
 import { playTerminalBlip } from '../utils/sound';
 import { motion } from 'motion/react';
+import { ApiKeysTab } from '../components/dashboard/ApiKeysTab';
+import { SecurityTab } from '../components/dashboard/SecurityTab';
+import { VaultAuditTab } from '../components/dashboard/VaultAuditTab';
 
 export function DashboardPage({
   metrics,
@@ -11,8 +14,10 @@ export function DashboardPage({
   keys,
   handleOpenPlayground,
   setIsTerminalOpen,
+  onLogout,
 }: any) {
   const [activeMetricTab, setActiveMetricTab] = useState<'rps' | 'tokens' | 'latency'>('rps');
+  const [activeTab, setActiveTab] = useState<'overview' | 'keys' | 'security' | 'vault'>('overview');
 
   const renderSparkline = (data: number[], strokeColor: string, fillColor: string) => {
     if (!data || data.length === 0) return null;
@@ -88,6 +93,27 @@ export function DashboardPage({
           </div>
         </div>
 
+      <motion.div variants={itemVariants} className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/50 border border-white/10 text-xs font-mono">
+          {([
+            ['overview', 'Overview'],
+            ['keys', 'API Keys'],
+            ['security', 'Security'],
+            ['vault', 'Vault & Audit'],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => { playTerminalBlip(600); setActiveTab(id); }}
+              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${activeTab === id ? 'bg-amber-500/20 text-amber-300 font-bold' : 'text-slate-400 hover:text-white'}`}
+            >
+              {id === 'keys' && <Key className="w-3.5 h-3.5" />}
+              {id === 'security' && <ShieldCheck className="w-3.5 h-3.5" />}
+              {id === 'vault' && <Layers className="w-3.5 h-3.5" />}
+              {label}
+            </button>
+          ))}
+        </div>
+
         <button
           onClick={() => {
             playTerminalBlip(700);
@@ -104,6 +130,12 @@ export function DashboardPage({
         </button>
       </motion.div>
 
+      {activeTab === 'keys' && <ApiKeysTab localKeys={keys} onTest={handleOpenPlayground} />}
+      {activeTab === 'security' && <SecurityTab onLogout={onLogout || (() => { window.location.href = '/login'; })} />}
+      {activeTab === 'vault' && <VaultAuditTab />}
+
+      {activeTab === 'overview' && (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <motion.div variants={itemVariants} className="p-5 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-md">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2 font-mono">
@@ -263,6 +295,8 @@ export function DashboardPage({
           </div>
         </motion.div>
       </div>
+      </>
+      )}
     </motion.div>
   );
 }
