@@ -1,0 +1,17 @@
+# Caddyfile — TLS-terminating reverse proxy for Mars AI Gateway (local/VPS)
+# Caddy fetches + renews Let's Encrypt certs automatically (HSTS then matters).
+# Backend MUST stay on 127.0.0.1:5000 (default HOST) — never expose :5000 directly.
+#
+# Local (self-signed/automatic local TLS):
+#   caddy run --config Caddyfile --adapter caddyfile
+# Then open https://mars.localhost (add 127.0.0.1 mars.localhost to hosts file).
+
+mars.localhost {
+	tls internal
+	reverse_proxy 127.0.0.1:5000
+}
+
+# Public VPS (replace with your domain; ports 80+443 must reach Caddy only):
+# gateway.example.com {
+# 	reverse_proxy 127.0.0.1:5000
+# }

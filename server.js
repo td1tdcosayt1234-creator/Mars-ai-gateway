@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import https from 'https';
 import { fileURLToPath } from 'url';
 import { config } from './server/config.js';
 import { audit, auditMiddleware, verifyChain } from './server/middleware/auditLogger.js';
@@ -110,16 +111,19 @@ function getClientIp(req){
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
-// Helmet with strict CSP for API + static
+// Helmet with strict CSP for API + static.
+// Prod: no 'unsafe-inline' in script-src, no localhost in connect-src, no
+// open https: img-src (exfil). Dev localhost origins added only off-prod.
+const DEV_CONNECT = (NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'ws:', 'wss:']);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      scriptSrc: ["'self'", "https://fonts.googleapis.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
-      imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", APP_URL, "https://api.github.com", "https://generativelanguage.googleapis.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", APP_URL, "https://api.github.com", "https://generativelanguage.googleapis.com", ...DEV_CONNECT],
       frameAncestors: ["'none'"],
       baseUri: ["'self'"],
       objectSrc: ["'none'"],
@@ -466,10 +470,26 @@ app.use((err,req,res,next)=>{
 });
 app.use((req,res)=> res.status(404).json({ error:'Not found' }));
 
-const server = app.listen(PORT, '0.0.0.0', ()=>{
-  console.log(`[MARS GATEWAY] Hardened backend listening on 0.0.0.0:${PORT} env=${NODE_ENV}`);
-  console.log(`[SECURITY] Helmet CSP+HSTS enabled, rate limits active, JWT ${JWT_EXPIRES}, CORS allow ${allowOrigins.join(',')}`);
-});
+const server = startListener();
+
+function startListener() {
+  const useTls = config.tlsCert && config.tlsKey;
+  if (useTls) {
+    const opts = { cert: fs.readFileSync(config.tlsCert), key: fs.readFileSync(config.tlsKey) };
+    return https.createServer(opts, app).listen(PORT, config.host, onListen('https'));
+  }
+  if (config.isProd && config.host === '0.0.0.0' && !useTls) {
+    console.warn('[SECURITY] 0.0.0.0 without TLS — only safe behind a TLS-terminating proxy/firewall (see Caddyfile, SECURITY.md)');
+  }
+  return app.listen(PORT, config.host, onListen('http'));
+}
+
+function onListen(proto) {
+  return () => {
+    console.log(`[MARS GATEWAY] Hardened backend listening on ${config.host}:${PORT} (${proto}) env=${NODE_ENV}`);
+    console.log(`[SECURITY] Helmet CSP+HSTS enabled, rate limits active, JWT ${JWT_EXPIRES}, CORS allow ${allowOrigins.join(',')}`);
+  };
+}
 // Slowloris / hanging-socket defense (LLM10 + DoS)
 server.headersTimeout = 15000;
 server.requestTimeout = 30000;

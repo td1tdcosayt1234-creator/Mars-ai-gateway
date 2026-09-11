@@ -108,6 +108,30 @@ describe('transport/session (no exfil)', () => {
     assert.ok(!read('index.html').includes("'unsafe-eval'"));
     assert.ok(!read('vite.config.ts').includes("'unsafe-eval'"));
   });
+  it('transport: loopback bind default, TLS opt-in, proxy files', () => {
+    const cfg = read('server/config.js');
+    assert.ok(cfg.includes("host: process.env.HOST || '127.0.0.1'"));
+    assert.ok(cfg.includes('TLS_CERT_PATH') && cfg.includes('TLS_KEY_PATH'));
+    const s = read('server.js');
+    assert.ok(s.includes('config.host') && s.includes('https.createServer'));
+    assert.ok(fs.existsSync(path.join(root, 'Caddyfile')));
+    assert.ok(fs.existsSync(path.join(root, 'nginx.example.conf')));
+  });
+  it('CSP: no script unsafe-inline in prod, dev localhost gated', () => {
+    const getScriptSrc = (csp) => {
+      const m = csp.match(/script-src([^;]*)/);
+      return m ? m[1] : '';
+    };
+    assert.ok(!getScriptSrc(read('server.js')).includes('unsafe-inline'));
+    assert.ok(!getScriptSrc(read('index.html')).includes('unsafe-inline'));
+    assert.ok(!getScriptSrc(read('public/_headers')).includes('unsafe-inline'));
+    // API connect-src: localhost only via DEV_CONNECT (prod-clean)
+    assert.ok(read('server.js').includes('DEV_CONNECT'));
+    assert.ok(!read('server.js').includes('generativelanguage.googleapis.com"],'));
+    // No open https: img-src in shipped CSPs
+    assert.ok(!read('server.js').includes('imgSrc: ["\'self\'", "data:", "https:", "blob:"]'));
+    assert.ok(!read('public/_headers').includes("img-src 'self' data: https: blob:"));
+  });
   it('trust-proxy safe: no X-Forwarded-For split for auth', () => {
     assert.ok(!read('server.js').includes("x-forwarded-for']?.toString().split"));
     assert.ok(!read('server/routes/auth.js').includes('x-forwarded-for'));

@@ -16,6 +16,19 @@ We will acknowledge within 48h and aim to patch within 7 days.
 |---------|-----------|
 | main    | ✅        |
 
+## Transport (HIGH finding fixed)
+
+- **Bind:** `HOST` defaults to `127.0.0.1` — the API is not LAN/internet reachable.
+  Only PaaS (Render) sets `HOST=0.0.0.0`, where the platform terminates TLS.
+- **TLS:** HSTS without TLS is theater — so either set `TLS_CERT_PATH` +
+  `TLS_KEY_PATH` (direct https) or run `Caddyfile` / `nginx.example.conf` in
+  front (Caddy gets Let's Encrypt automatically). Never expose `:5000` directly.
+- **Firewall (VPS):** allow 80/443 only, deny 5000 from non-loopback —
+  Windows: `New-NetFirewallRule -DisplayName "mars-5000-loopback-only"
+  -Direction Inbound -LocalPort 5000 -Protocol TCP -Action Block`
+  (plus an allow for 127.0.0.1 first); Linux: `ufw deny 5000` / Cloud
+  security-group: no public rule for 5000.
+
 ## Threat Model (10/10)
 
 - Adversary: stolen JWT, Tier1 bypass, prompt injection, leaked DB, XSS, CSRF, brute-force, dependency supply-chain, insider canary abuse.
@@ -30,7 +43,7 @@ We will acknowledge within 48h and aim to patch within 7 days.
 - **Secure RNG**: `crypto.randomBytes` + `randomUUID` + WebCrypto (no Math.random for secrets).
 - **Rate Limiting**: global 200/15m, login 5/15m, keygen 10/min, Tier1 edge 300/min, per-key quota+RPM persisted; `trust proxy=1` + `req.ip` only (no XFF split).
 - **Input**: 10kb JSON, depth check, proto-pollution/NoSQL/XSS guards, allowlists, PII redact, AI firewall score≥50 block.
-- **Headers**: CSP (no `unsafe-eval` in prod), HSTS preload, DENY, nosniff, COOP/COEP/CORP, Referrer-Policy, Permissions-Policy. Verified in CI.
+- **Headers**: CSP without script `unsafe-inline` in prod (`style` keeps it — React injects `<style>` at runtime; Vite dev CSP is separate), tight `img-src` (no open `https:`), dev-only localhost in API `connect-src`, HSTS preload, DENY, nosniff, COOP/COEP/CORP, Referrer-Policy, Permissions-Policy, `originAgentCluster`. Verified in CI.
 - **Supply chain**: `package-lock.json` + `npm ci --ignore-scripts`, Dependabot, CodeQL, gitleaks + push protection, Scorecard, `npm audit --high` (blocking), SBOM CycloneDX (`npm run sbom`), pinned GH actions, `settings.yml` branch protection (1 review, stale dismiss, CODEOWNERS, linear, signed, no force).
 - **Runtime**: non-root `mars`, `apk upgrade`, pruned prod deps, persistent disk `/app/data`, Redis `noeviction`, healthcheck, `.dockerignore`.
 - **Proof**: `npm test` — `tests/security.test.js` (node:test, no deps) covers secrets, HMAC, Merkle, CSP, OAuth, order, persistence, KMS.

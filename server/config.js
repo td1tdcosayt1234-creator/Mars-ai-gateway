@@ -76,6 +76,13 @@ if (!isProd && (jwtSecret === tierHmac || jwtSecret === masterKey || tierHmac ==
 
 export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
+  // Loopback by default: LAN/internet cannot reach the API directly.
+  // PaaS (Render/Fly) must set HOST=0.0.0.0 — they terminate TLS + firewall.
+  host: process.env.HOST || '127.0.0.1',
+  // Local TLS (opt-in): set TLS_CERT_PATH + TLS_KEY_PATH (.pem) to serve
+  // https directly. Otherwise put Caddy/Nginx in front (see Caddyfile).
+  tlsCert: process.env.TLS_CERT_PATH || '',
+  tlsKey: process.env.TLS_KEY_PATH || '',
   nodeEnv,
   isProd,
   jwtSecret,
