@@ -96,7 +96,7 @@ export const config = {
   // SSRF allowlist for server-side fetches (OAuth + future LLM upstream).
   // Any fetch to other hosts must be rejected via assertUpstream().
   allowedUpstreams: new Set(
-    (process.env.ALLOWED_UPSTREAMS || 'github.com,api.github.com,accounts.google.com,oauth2.googleapis.com,www.googleapis.com,generativelanguage.googleapis.com')
+    (process.env.ALLOWED_UPSTREAMS || 'github.com,api.github.com,accounts.google.com,oauth2.googleapis.com,www.googleapis.com,generativelanguage.googleapis.com,challenges.cloudflare.com')
       .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
   ),
   authCodeHashes: parseCodeHashes(),

@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { config } from '../config.js';
 import { isDenied } from '../utils/denylist.js';
+import { audit } from './auditLogger.js';
 
 const JWT_SECRET = config.jwtSecret;
 const JWT_EXPIRES = config.jwtExpires;
@@ -22,16 +23,17 @@ function fpEqual(a, b) {
 
 export function signToken(payload) {
   const jti = crypto.randomUUID();
-  // iss/aud live in the payload only (jsonwebtoken rejects them in options too)
+  // iss/aud live in the payload only (jsonwebtoken rejects them in options too).
+  // Explicit HS256 kills algorithm-confusion (none/RS256) outright.
   return jwt.sign(
     { ...payload, jti, iss: JWT_ISSUER, aud: JWT_AUDIENCE },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRES }
+    { expiresIn: JWT_EXPIRES, algorithm: 'HS256' }
   );
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET, { issuer: JWT_ISSUER, audience: JWT_AUDIENCE });
+  return jwt.verify(token, JWT_SECRET, { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithms: ['HS256'] });
 }
 
 export function authenticate(req, res, next) {
@@ -46,9 +48,10 @@ export function authenticate(req, res, next) {
   } catch (e) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-  // Logout/refresh revocation (reuse of denylisted jti = incident)
+  // Logout/refresh revocation (reuse of denylisted jti = incident, audited)
   if (isDenied(payload.jti)) {
     console.warn(`[AUTH] denylisted token reuse jti=${String(payload.jti).slice(0, 8)} ip=${req.ip}`);
+    try { audit('token_reuse', `revoked jti ${String(payload.jti).slice(0, 8)} replayed`, req.ip, '-'); } catch {}
     return res.status(401).json({ error: 'Token revoked', revoked: true });
   }
   // UA-fingerprint binding: stolen tokens fail on different clients

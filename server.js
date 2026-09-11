@@ -286,7 +286,7 @@ app.post('/api/auth/login', loginLimiter, body('code').isString().trim().isLengt
   }
   recordBrute(ip,true);
   const jti=crypto.randomUUID();
-  const token=jwt.sign({ jti, ip, fp: fingerprint(req), iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token=jwt.sign({ jti, ip, fp: fingerprint(req), iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: JWT_EXPIRES, algorithm: 'HS256' });
   // httpOnly secure cookie + json response (dual)
   const cookieOpts={ httpOnly:true, secure: NODE_ENV==='production', sameSite:'strict', maxAge: 30*60*1000, path:'/' };
   res.cookie('ares_token', token, cookieOpts);
@@ -319,7 +319,7 @@ app.post('/api/auth/refresh', authenticate, sharedCsrfCheck, (req,res)=>{
   const old = req.user;
   deny(old.jti, old.exp);
   const jti=crypto.randomUUID();
-  const token=jwt.sign({ jti, sub: old.sub, ip: getClientIp(req), fp: fingerprint(req), iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token=jwt.sign({ jti, sub: old.sub, ip: getClientIp(req), fp: fingerprint(req), iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: JWT_EXPIRES, algorithm: 'HS256' });
   const cookieOpts={ httpOnly:true, secure: NODE_ENV==='production', sameSite:'strict', maxAge: 30*60*1000, path:'/' };
   res.cookie('ares_token', token, cookieOpts);
   addAudit('token_refresh', `jti ${String(jti).slice(0,8)} from ${String(old.jti).slice(0,8)}`, getClientIp(req), String(jti).slice(0,8));
@@ -369,8 +369,9 @@ app.post('/api/keys', authenticate, keyGenLimiter, csrfCheck, [
   if(!isValidName(name)) return res.status(400).json({ error:'Invalid name chars' });
   if(!VALID_TIERS.has(tier) || !VALID_ZONES.has(zone)) return res.status(400).json({ error:'Invalid tier/zone' });
 
-  // per-user limit 20 (check count)
+  // per-owner cap 20 (abuse containment) + global cap 50
   if(apiKeys.size() >= 50) return res.status(429).json({ error:'Global key limit reached' });
+  if(apiKeys.ownerCount(keyOwner(req)) >= 20) return res.status(429).json({ error:'Key limit reached (20 per account)' });
 
   const models = Array.isArray(req.body.models) && req.body.models.length
     ? [...new Set(req.body.models.map(m => sanitize(m,30)).filter(m => VALID_TIERS.has(m)))]

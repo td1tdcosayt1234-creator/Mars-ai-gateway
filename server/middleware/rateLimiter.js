@@ -34,6 +34,33 @@ export const keyGenLimiter = rateLimit({
   message: { error: 'Key generation rate limited (10/min)' }
 });
 
+// TOTP is 6 digits (1M combos): strict brute cap or codes fall in hours
+export const tfaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many 2FA attempts. Try in 15 minutes.' }
+});
+
+// OAuth initiate: stateStore timer pileup + provider abuse guard
+export const oauthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many OAuth attempts. Try later.' }
+});
+
+// Expensive AI inference per IP (works across keys/users — quotaGuard is per-key)
+export const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'AI rate limited (120/min per IP)' }
+});
+
 // Brute-force tracker (supplements rateLimit), sealed at rest — tampering with
 // lockout counters fails GCM auth instead of unlocking attackers.
 // For multi-instance, set REDIS_URL and share via Redis (redisClient.getRedis()).

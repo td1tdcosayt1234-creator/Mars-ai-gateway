@@ -249,6 +249,39 @@ describe('database-proof (hacker cannot reach the vault)', () => {
   });
 });
 
+describe('brute-force caps (TOTP/OAuth/AI/owner)', () => {
+  it('HS256 pinned on every sign+verify, reuse audited', () => {
+    assert.ok(read('server/middleware/auth.js').includes("algorithms: ['HS256']"));
+    assert.ok(read('server/middleware/tier2Core.js').includes("algorithms: ['HS256']"));
+    assert.ok(read('server/routes/oauth.js').includes("algorithms: ['HS256']"));
+    const signs = (read('server.js').match(/algorithm: 'HS256'/g) || []).length;
+    assert.ok(signs >= 2);
+    assert.ok(read('server/middleware/auth.js').includes('token_reuse'));
+  });
+  it('2FA/OAuth/AI limiters exist and are wired', () => {
+    const rl = read('server/middleware/rateLimiter.js');
+    assert.ok(rl.includes('tfaLimiter') && rl.includes('oauthLimiter') && rl.includes('aiLimiter'));
+    const tf = read('server/routes/twoFactor.js');
+    assert.ok(tf.includes('/setup\', authenticate, tfaLimiter') && tf.includes('/verify\', authenticate, tfaLimiter'));
+    const oa = read('server/routes/oauth.js');
+    assert.ok(oa.includes("'/github', oauthLimiter") && oa.includes("'/google', oauthLimiter") && oa.includes('validState'));
+    const ai = read('server/routes/aiGateway.js');
+    assert.ok(ai.includes('aiLimiter, quotaGuard') && ai.includes('aiLimiter, aiFirewall'));
+  });
+  it('per-owner key cap 20 both routes', () => {
+    assert.ok(read('server/utils/secureStore.js').includes('ownerCount'));
+    assert.ok(read('server.js').includes('ownerCount(keyOwner(req)) >= 20'));
+    assert.ok(read('server/routes/keys.js').includes('ownerCount('));
+  });
+  it('Turnstile real verify + sealed backup codes', () => {
+    const t = read('server/middleware/tier1Perimeter.js');
+    assert.ok(t.includes('TURNSTILE_SECRET') && t.includes('siteverify') && t.includes('failing open'));
+    const b = read('server/routes/twoFactor.js');
+    assert.ok(b.includes('newBackupCodes') && b.includes('consumeBackupCode') && b.includes('twoFactorCodes.json') && b.includes('timingSafeEqual'));
+    assert.ok(read('src/components/TwoFactorPanel.tsx').includes('backup_codes'));
+  });
+});
+
 describe('persistence + governance (10/10)', () => {
   it('secureStore/quota/brute/audit/2fa persist to disk', () => {
     assert.ok(read('server/utils/secureStore.js').includes('secureStore.json'));

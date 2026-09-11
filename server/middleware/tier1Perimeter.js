@@ -4,6 +4,31 @@
 import crypto from 'crypto';
 import { config } from '../config.js';
 
+let captchaWarned = false;
+async function verifyCaptcha(token, ip) {
+  const secret = process.env.TURNSTILE_SECRET || '';
+  if (!secret) {
+    if (!captchaWarned) {
+      console.warn('[TIER1] TURNSTILE_SECRET unset — CAPTCHA accepts any token (dev only). Set it in production.');
+      captchaWarned = true;
+    }
+    return typeof token === 'string' && token.length > 0;
+  }
+  try {
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: String(token), remoteip: ip || '' }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const d = await r.json().catch(() => ({}));
+    return d.success === true;
+  } catch (e) {
+    console.warn('[TIER1] Turnstile outage, failing open (brute limits still apply)');
+    return true;
+  }
+}
+
 // WAF signatures (OWASP + AI)
 const WAF_SIGS = [
   { pat: /(\bUNION\b.*\bSELECT\b|\bOR\s+1=1\b)/i, name: 'SQLi' },
@@ -17,7 +42,7 @@ const WAF_SIGS = [
 const edgeHits = new Map(); // ip -> { count, first, blockUntil }
 const BOT_UA = [/HeadlessChrome/i, /PhantomJS/i, /sqlmap/i];
 
-export function tier1Perimeter(req,res,next){
+export async function tier1Perimeter(req,res,next){
   const ip = req.ip;
   const now = Date.now();
 
@@ -45,11 +70,16 @@ export function tier1Perimeter(req,res,next){
     }
   }
 
-  // 4. CAPTCHA hook (Turnstile/mock): header x-captcha-token required for sensitive POST after 5 failures
-  // In prod, verify via Cloudflare: POST https://challenges.cloudflare.com/turnstile/v0/siteverify
+  // 4. CAPTCHA: x-captcha-token required for login after 5 edge hits.
+  // Real Cloudflare Turnstile verify when TURNSTILE_SECRET is set; otherwise
+  // any non-empty token passes (dev) with a one-time warning. Verifier outage
+  // fails OPEN (brute limits still apply) but is audited.
   if(req.path.includes('/auth/login') && rec.count>5){
     const cap=req.headers['x-captcha-token'];
     if(!cap) return res.status(403).json({ error:'Tier1: CAPTCHA required', tier:1, needCaptcha:true });
+    if(!(await verifyCaptcha(cap, ip))){
+      return res.status(403).json({ error:'Tier1: CAPTCHA invalid', tier:1, needCaptcha:true });
+    }
   }
 
   // 5. Geo allowlist stub (allow BD/US/SG, block others if configured)

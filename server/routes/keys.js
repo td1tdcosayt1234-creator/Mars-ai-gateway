@@ -49,6 +49,7 @@ router.post('/', authenticate, keyGenLimiter, csrfCheck, [
   let name = req.body.name ? sanitize(req.body.name, 64) : `Martian Unit (${tier.split('-')[0]})`;
   if (!validName(name)) return res.status(400).json({ error: 'Invalid name' });
   if (store.size() >= 50) return res.status(429).json({ error: 'Key limit reached' });
+  if (store.ownerCount(req.user.sub || req.user.jti) >= 20) return res.status(429).json({ error: 'Key limit reached (20 per account)' });
   // Least-privilege defaults: chat-only, single model, 90d expiry, no IP pin unless set
   const models = Array.isArray(req.body.models) && req.body.models.length
     ? [...new Set(req.body.models.map(m => sanitize(m, 30)).filter(m => TIERS.has(m)))]

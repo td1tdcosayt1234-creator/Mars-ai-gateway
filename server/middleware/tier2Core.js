@@ -36,7 +36,7 @@ export function tier2Guard(req,res,next){
   const tok=auth.startsWith('Bearer ')? auth.slice(7): req.cookies?.ares_token;
   if(!tok) return res.status(401).json({ error:'Tier2: No vault token', tier:2 });
   try{
-    const p=jwt.verify(tok, JWT_SECRET, { issuer: config.jwtIssuer, audience: config.jwtAudience });
+    const p=jwt.verify(tok, JWT_SECRET, { issuer: config.jwtIssuer, audience: config.jwtAudience, algorithms: ['HS256'] });
     if(isDenied(p.jti)) return res.status(401).json({ error:'Tier2: Token revoked', tier:2 });
     req.user=p;
   }catch{

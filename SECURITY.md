@@ -37,11 +37,11 @@ We will acknowledge within 48h and aim to patch within 7 days.
 
 ## Hardened Security Features (2026-09, audited 10/10)
 
-- **Authentication**: `AUTH_CODE_HASHES` env allowlist (no defaults), constant-time compare, 5/15m lockout + 400-700ms delay, JWT 30m + httpOnly `Secure/SameSite` + CSRF double-submit, in-memory Bearer only (never localStorage), OAuth state+PKCE S256, no JWT in URL.
+- **Authentication**: `AUTH_CODE_HASHES` env allowlist (no defaults), constant-time compare, 5/15m lockout + 400-700ms delay + Turnstile CAPTCHA (real verify when `TURNSTILE_SECRET` set), JWT 30m HS256-pinned `iss/aud` + UA-fingerprint bind, logout/refresh denylist with reuse audit, rotation + logout-all, 2FA TOTP (10/15m brute cap) + one-time backup codes (hashed, sealed).
 - **Tiered zero-trust**: Tier1 WAF recomputed HMAC `HMAC(TIER_HMAC, method:path:ts)` + 30s window, Tier2 JWT+2FA (TOTP RFC6238, 10m) + RBAC, Tier3 10m freshness + honey 418 + envelope AES-256-GCM + Merkle. Guard mounted before handlers (Express order fixed).
 - **Encryption at Rest**: AES-256-GCM with PBKDF2 (210k, sha256) via `kmsProvider` (`KMS_PROVIDER=local|aws-kms|gcp-kms`, version persisted `data/hsm.json`); vault blobs persisted `data/secureStore.json` (0600); 2FA `data/twoFactor.json` (0600); quota/brute/audit persisted; Redis (`REDIS_URL`) for multi-instance.
 - **Secure RNG**: `crypto.randomBytes` + `randomUUID` + WebCrypto (no Math.random for secrets).
-- **Rate Limiting**: global 200/15m, login 5/15m, keygen 10/min, Tier1 edge 300/min, per-key quota+RPM persisted; `trust proxy=1` + `req.ip` only (no XFF split).
+- **Rate Limiting**: global 200/15m, login 5/15m, keygen 10/min, 2FA 10/15m, OAuth 30/15m, AI 120/min/IP, Tier1 edge 300/min, per-key quota+RPM+TPM persisted, 20 keys/account; `trust proxy=1` + `req.ip` only (no XFF split).
 - **Input**: 10kb JSON, depth check, proto-pollution/NoSQL/XSS guards, allowlists, PII redact, AI firewall score≥50 block.
 - **Headers**: CSP without script `unsafe-inline` in prod (`style` keeps it — React injects `<style>` at runtime; Vite dev CSP is separate), tight `img-src` (no open `https:`), dev-only localhost in API `connect-src`, HSTS preload, DENY, nosniff, COOP/COEP/CORP, Referrer-Policy, Permissions-Policy, `originAgentCluster`. Verified in CI.
 - **Supply chain**: `package-lock.json` + `npm ci --ignore-scripts`, Dependabot, CodeQL, gitleaks + push protection, Scorecard, `npm audit --high` (blocking), SBOM CycloneDX (`npm run sbom`), pinned GH actions, `settings.yml` branch protection (1 review, stale dismiss, CODEOWNERS, linear, signed, no force).

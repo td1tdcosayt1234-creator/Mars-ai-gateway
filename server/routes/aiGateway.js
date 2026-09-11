@@ -8,6 +8,7 @@ import { authenticate } from '../middleware/auth.js';
 import { verifyApiKey } from '../middleware/apiKeyAuth.js';
 import { aiFirewall, sanitizeAIResponse } from '../middleware/aiFirewall.js';
 import { quotaGuard, estimateTokens } from '../middleware/tenantQuota.js';
+import { aiLimiter } from '../middleware/rateLimiter.js';
 import { sanitizePrompt, validateAIRequest, extractAllUserText } from '../utils/aiSanitizer.js';
 import { audit } from '../middleware/auditLogger.js';
 
@@ -59,7 +60,7 @@ function enforceKeyPolicy(req, res, next){
   next();
 }
 
-router.post('/v1/chat/completions', dualAuth, quotaGuard, aiFirewall, enforceKeyPolicy, async (req,res)=>{
+router.post('/v1/chat/completions', dualAuth, aiLimiter, quotaGuard, aiFirewall, enforceKeyPolicy, async (req,res)=>{
   const errors=validateAIRequest(req.body);
   if(errors.length) return res.status(400).json({ error:'Validation failed', details: errors });
   // Idempotency: same key + same body hash returns cached response (no double charge)
@@ -118,8 +119,8 @@ router.post('/v1/chat/completions', dualAuth, quotaGuard, aiFirewall, enforceKey
   res.json(response);
 });
 
-// Token count dry-run (no quota charge, still firewalled for injection recon)
-router.post('/v1/tokenize', dualAuth, aiFirewall, (req,res)=>{
+// Token count dry-run (no quota charge, still firewalled + IP-limited for recon)
+router.post('/v1/tokenize', dualAuth, aiLimiter, aiFirewall, (req,res)=>{
   const errors = validateAIRequest({ ...req.body, stream: false });
   // tokenize allows missing prompt, but still rejects tools/system/unknown fields
   const fatal = errors.filter(e => !e.includes('prompt'));

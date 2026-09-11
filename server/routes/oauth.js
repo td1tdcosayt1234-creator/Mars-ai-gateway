@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { safeFetch } from '../utils/upstream.js';
+import { oauthLimiter } from '../middleware/rateLimiter.js';
 
 const router=express.Router();
 const JWT_SECRET = config.jwtSecret;
@@ -20,17 +21,29 @@ const stateStore=new Map(); // state -> { verifier, ts }
 function genState(){
   const state=crypto.randomBytes(32).toString('hex');
   const verifier=crypto.randomBytes(32).toString('base64url');
+  // Cap pileup under initiate-spam (limiter is first defense)
+  if (stateStore.size > 1000) {
+    const now = Date.now();
+    for (const [k, v] of stateStore) {
+      if (now - v.ts > 10 * 60 * 1000) stateStore.delete(k);
+      if (stateStore.size <= 500) break;
+    }
+  }
   stateStore.set(state, { verifier, ts:Date.now() });
   setTimeout(()=> stateStore.delete(state), 10*60*1000);
   return { state, verifier };
 }
+
+function validState(s) {
+  return typeof s === 'string' && /^[a-f0-9]{64}$/.test(s) && stateStore.has(s);
+}
 function makeJWT(user){
   const jti=crypto.randomUUID();
-  return jwt.sign({ sub:user.id, email:user.email, provider:user.provider, jti, fp:user.fp, iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: '30m' });
+  return jwt.sign({ sub:user.id, email:user.email, provider:user.provider, jti, fp:user.fp, iss: config.jwtIssuer, aud: config.jwtAudience }, JWT_SECRET, { expiresIn: '30m', algorithm: 'HS256' });
 }
 
 // Initiate GitHub
-router.get('/github', (req,res)=>{
+router.get('/github', oauthLimiter, (req,res)=>{
   if(!GH_ID) return res.status(503).json({ error:'GitHub OAuth not configured. Set GITHUB_CLIENT_ID/SECRET in Render env.' });
   const { state } = genState();
   const url=`https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(GH_ID)}&redirect_uri=${encodeURIComponent(APP_URL + '/api/auth/oauth/github/callback')}&scope=user:email&state=${state}`;
@@ -38,7 +51,7 @@ router.get('/github', (req,res)=>{
 });
 router.get('/github/callback', async (req,res)=>{
   const { code, state } = req.query;
-  if(!stateStore.has(state)) return res.status(400).send('Invalid state (CSRF)');
+  if(!validState(state)) return res.status(400).send('Invalid state (CSRF)');
   stateStore.delete(state);
   if(!code) return res.status(400).send('Missing code');
   try{
@@ -68,7 +81,7 @@ router.get('/github/callback', async (req,res)=>{
 });
 
 // Initiate Google
-router.get('/google', (req,res)=>{
+router.get('/google', oauthLimiter, (req,res)=>{
   if(!GO_ID) return res.status(503).json({ error:'Google OAuth not configured. Set GOOGLE_CLIENT_ID/SECRET' });
   const { state, verifier } = genState();
   const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');
@@ -78,7 +91,7 @@ router.get('/google', (req,res)=>{
 });
 router.get('/google/callback', async (req,res)=>{
   const { code, state } = req.query;
-  if(!stateStore.has(state)) return res.status(400).send('Invalid state');
+  if(!validState(state)) return res.status(400).send('Invalid state');
   const { verifier } = stateStore.get(state); stateStore.delete(state);
   const cookieVerifier=req.cookies?.pkce_verifier || verifier;
   if(!code) return res.status(400).send('Missing code');
@@ -110,7 +123,7 @@ router.get('/me', (req,res)=>{
   const tok=auth.startsWith('Bearer ')? auth.slice(7) : req.cookies?.ares_token;
   if(!tok) return res.status(401).json({ error:'No token' });
   try{
-    const p=jwt.verify(tok, JWT_SECRET, { issuer: config.jwtIssuer, audience: config.jwtAudience });
+    const p=jwt.verify(tok, JWT_SECRET, { issuer: config.jwtIssuer, audience: config.jwtAudience, algorithms: ['HS256'] });
     res.json({ user: p });
   }catch{ res.status(401).json({ error:'Invalid token' }); }
 });

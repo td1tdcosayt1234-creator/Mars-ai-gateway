@@ -103,6 +103,13 @@ class SecureStore {
     return true;
   }
   size(){ return this.map.size; }
+  ownerCount(owner){
+    let n = 0;
+    for (const r of this.map.values()) {
+      if (r.owner && r.owner === owner && r.status === 'active') n++;
+    }
+    return n;
+  }
 }
 
 export const secureStore = new SecureStore();
