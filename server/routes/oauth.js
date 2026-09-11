@@ -3,10 +3,11 @@
 import express from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { config } from '../config.js';
 
 const router=express.Router();
-const JWT_SECRET=process.env.JWT_SECRET || 'dev_secret';
-const APP_URL=process.env.APP_URL || 'http://localhost:3000';
+const JWT_SECRET = config.jwtSecret;
+const APP_URL = config.appUrl;
 const GH_ID=process.env.GITHUB_CLIENT_ID || '';
 const GH_SECRET=process.env.GITHUB_CLIENT_SECRET || '';
 const GO_ID=process.env.GOOGLE_CLIENT_ID || '';
@@ -54,15 +55,14 @@ router.get('/github/callback', async (req,res)=>{
     const primary=Array.isArray(emails)? emails.find(e=>e.primary)?.email : null;
     const profile={ id:`gh_${user.id}`, email: primary||user.email||`${user.login}@github.local`, name: user.name||user.login, provider:'github', avatar:user.avatar_url, fp: req.fp };
     const jwtToken=makeJWT(profile);
-    // Set cookies same as login
-    const isProd=process.env.NODE_ENV==='production';
+    // Set cookies same as login — httpOnly only, never expose JWT in URL/query
+    const isProd=config.isProd;
     res.cookie('ares_token', jwtToken, { httpOnly:true, secure:isProd, sameSite:'lax', maxAge:30*60*1000, path:'/' });
-    res.cookie('ares_user', JSON.stringify({ email:profile.email, provider:'github' }), { httpOnly:false, secure:isProd, sameSite:'lax', path:'/' });
-    // Redirect to dashboard with token in hash for SPA (also httpOnly)
-    res.redirect(`${APP_URL}/dashboard?oauth=github&token=${encodeURIComponent(jwtToken)}`);
+    // Redirect without token in URL (prevents log/history/referer leak)
+    res.redirect(`${APP_URL}/dashboard?oauth=github`);
   }catch(e){
-    console.error('[OAUTH_GH]',e);
-    res.status(500).send('GitHub OAuth failed: '+ e.message);
+    console.error('[OAUTH_GH]', config.isProd ? 'oauth failed' : e);
+    res.status(500).send('GitHub OAuth failed');
   }
 });
 
@@ -93,14 +93,13 @@ router.get('/google/callback', async (req,res)=>{
     const user=await idRes.json();
     const profile={ id:`go_${user.id}`, email:user.email, name:user.name, provider:'google', avatar:user.picture, fp: req.fp };
     const jwtToken=makeJWT(profile);
-    const isProd=process.env.NODE_ENV==='production';
+    const isProd=config.isProd;
     res.clearCookie('pkce_verifier', { path:'/' });
     res.cookie('ares_token', jwtToken, { httpOnly:true, secure:isProd, sameSite:'lax', maxAge:30*60*1000, path:'/' });
-    res.cookie('ares_user', JSON.stringify({ email:profile.email, provider:'google' }), { httpOnly:false, secure:isProd, sameSite:'lax', path:'/' });
-    res.redirect(`${APP_URL}/dashboard?oauth=google&token=${encodeURIComponent(jwtToken)}`);
+    res.redirect(`${APP_URL}/dashboard?oauth=google`);
   }catch(e){
-    console.error('[OAUTH_GO]',e);
-    res.status(500).send('Google OAuth failed: '+ e.message);
+    console.error('[OAUTH_GO]', config.isProd ? 'oauth failed' : e);
+    res.status(500).send('Google OAuth failed');
   }
 });
 

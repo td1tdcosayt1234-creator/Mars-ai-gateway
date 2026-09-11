@@ -1,10 +1,12 @@
 import { ApiKeyRecord, GatewayMetrics, RequestLog, ModelTier, RelayZone } from '../types';
 
+// Demo-only mock data — NEVER real secrets. These placeholders are not valid API keys
+// and are never sent to the backend. Backend keys are issued via POST /api/keys.
 export const INITIAL_KEYS: ApiKeyRecord[] = [
   {
     id: 'key_ares_01',
     name: 'Olympus Research Rover Agent',
-    key: 'ak_mars_live_9f82d7a6e14b09c2b3e81',
+    key: 'REDACTED_DEMO_KEY_DO_NOT_USE',
     tier: 'gemini-2.5-flash',
     relayZone: 'olympus-primary',
     createdAt: '2026-08-22T08:14:00Z',
@@ -18,7 +20,7 @@ export const INITIAL_KEYS: ApiKeyRecord[] = [
   {
     id: 'key_ares_02',
     name: 'Phobos Orbital Atmospheric Scanner',
-    key: 'ak_mars_live_4a17c889f02e33d712ab4',
+    key: 'REDACTED_DEMO_KEY_DO_NOT_USE',
     tier: 'gemini-2.5-pro',
     relayZone: 'phobos-orbital',
     createdAt: '2026-08-28T14:30:00Z',
@@ -32,7 +34,7 @@ export const INITIAL_KEYS: ApiKeyRecord[] = [
   {
     id: 'key_ares_03',
     name: 'Habitat Dome Life Support AI',
-    key: 'ak_mars_live_88d120fb36cc5509e871f',
+    key: 'REDACTED_DEMO_KEY_DO_NOT_USE',
     tier: 'ares-neural-70b',
     relayZone: 'chryse-ground',
     createdAt: '2026-09-01T02:00:00Z',
@@ -46,7 +48,7 @@ export const INITIAL_KEYS: ApiKeyRecord[] = [
   {
     id: 'key_ares_04',
     name: 'Legacy Sol-4 Subsurface Drill telemetry',
-    key: 'ak_mars_live_019ef7228a4bc1093f61a',
+    key: 'REDACTED_DEMO_KEY_DO_NOT_USE',
     tier: 'deep-space-vision',
     relayZone: 'valles-marineris',
     createdAt: '2026-07-15T11:20:00Z',

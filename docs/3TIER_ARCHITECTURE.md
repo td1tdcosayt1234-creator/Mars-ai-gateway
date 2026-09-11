@@ -15,9 +15,9 @@
 
 ## Tier3 — Deep Vault (Data Plane)
 - Location: `server/middleware/tier3DeepVault.js` + `hsmSimulator.js` + `merkleAudit.js`
-- Requires Tier1+Tier2, honeypot canary `ak_mars_live_HONEY...` →418 trap + IP 24h block
+- Requires Tier1+Tier2, honeypot canary (see `HONEY_TOKENS` env) →418 trap + IP block
 - Vault freshness 10m re-auth, enclave attestation `x-tier2-sig`
-- Envelope encryption: dataKey 32B per record → master wrap AES-256-GCM (`MASTER_KEY` env, HSM simulated `hsmSimulator.js` rotation v1→vN), Merkle root hash-chained `TIER3_GENESIS...`
+- Envelope encryption: dataKey 32B per record → master wrap AES-256-GCM (`MASTER_KEY` env PBKDF2-derived, HSM simulated `hsmSimulator.js` rotation v1→vN), Merkle root hash-chained `TIER3_GENESIS...`
 - Immutable audit `merkleAudit.js` append-only, root verifiable, `GET /api/vault/status` returns leaves/root
 
 ## Build 10-min Hardening
@@ -25,12 +25,12 @@
 - All via GitHub, branch protection 1 review, secret scanning, CodeQL, Scorecard, Dependabot.
 
 ## Hack Scenarios Blocked
-1. **Bypass Tier1 direct to Tier2:** fails `x-tier1-sig` check →403 Tier3
+1. **Bypass Tier1 direct to Tier2:** fails `x-tier1-sig` HMAC recompute →403 Tier2
 2. **Stolen JWT:** Tier2 2FA 10m window + Tier3 10m freshness → re-auth needed, canary trap
 3. **Prompt injection:** Tier1 WAF + Tier2 AI firewall dual
-4. **DB leak:** Tier3 envelope → master in HSM never exported, dataKey per record
+4. **DB leak:** Tier3 envelope → master via PBKDF2 from `MASTER_KEY` env (simulated HSM), dataKey per record
 
-Test:
-- `curl -H "x-api-key: ak_mars_live_HONEY_..." /api/keys` →418
+Test (canary value from `HONEY_TOKENS` env, never committed):
+- `curl -H "x-api-key: <HONEY_TOKEN>" /api/keys` →418
 - `POST /api/v1/chat/completions` with `ignore previous instructions` →403 Tier1 WAF
 - `POST /api/keys` without `x-2fa-token` after 10m →403 need2FA

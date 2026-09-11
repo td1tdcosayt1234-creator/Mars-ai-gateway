@@ -1,14 +1,16 @@
-// hsmSimulator.js - Simulated HSM for master key (never export plaintext)
-// FIPS-like: key gen, wrap/unwrap, rotation, audit
+// hsmSimulator.js - KMS-backed master (never export plaintext)
+// Production: set KMS_PROVIDER=aws-kms|gcp-kms with real HSM. Default local uses
+// kmsProvider (PBKDF2 210k) with persisted version (data/hsm.json).
 import crypto from 'crypto';
+import { kms } from './kmsProvider.js';
 
 class HSM {
   constructor(){
-    this.master = crypto.randomBytes(32);
-    this.version = 1;
+    this.version = kms.version;
     this.audit = [];
-    this.log('HSM_INIT', 'master v1 generated');
+    this.log('HSM_INIT', `provider=${kms.provider} v${this.version} PBKDF2(${kms.iterations})`);
   }
+  get master() { return kms.master(); }
   log(action, detail){
     this.audit.push({ ts: Date.now(), action, detail, v:this.version });
     if(this.audit.length>100) this.audit.shift();
@@ -30,9 +32,11 @@ class HSM {
     return out;
   }
   rotate(){
-    this.master=crypto.randomBytes(32);
-    this.version++;
-    this.log('ROTATE', `master v${this.version}`);
+    // Local rotation bumps persisted version + re-derives master.
+    // Production KMS: rotate in AWS/GCP KMS + re-wrap data keys (see kmsProvider).
+    const v = kms.rotate();
+    this.version = v;
+    this.log('ROTATE', `master v${this.version} provider=${kms.provider}`);
     return this.version;
   }
   getAudit(){ return this.audit.slice(-20); }

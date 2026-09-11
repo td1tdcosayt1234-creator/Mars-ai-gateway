@@ -25,13 +25,14 @@ export const SECURITY_CONFIG = {
   SALT_LENGTH: 16,
 } as const;
 
-// Pre-hashed allowlist (SHA-256 hex) - never store plaintext in source
-// Codes: MARS-OLYMPUS-2026, ARES-ADMIN-782, MARS-GATEWAY-DEMO
-const ALLOWED_CODE_HASHES = new Set<string>([
-  'c55d6cf023bb7f3eee1a914029c7548676b3adc5af011863dff9361eb7d671b1',
-  '8a84b6bc02483045e9947bb3ceb71a48b0c4c4133f8e53fb62ea0ddd01b8d699',
-  '3669aad75fda7c09de25f86650c33699cee368820c0fc8ef350711e6aff48cec',
-]);
+// Offline demo allowlist is DISABLED by default (fail-closed).
+// Backend POST /api/auth/login is the source of truth. To enable a local
+// emergency fallback, set VITE_OFFLINE_CODE_HASHES (comma-separated SHA-256 hex)
+// at build time. Never commit real codes or hashes.
+const rawOffline = (import.meta as any).env?.VITE_OFFLINE_CODE_HASHES || '';
+const ALLOWED_CODE_HASHES = new Set<string>(
+  rawOffline.split(',').map((s: string) => s.trim().toLowerCase()).filter((s: string) => /^[a-f0-9]{64}$/.test(s))
+);
 
 // ---------------------------------------------------------------------------
 // SANITIZATION & VALIDATION
@@ -93,6 +94,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 export async function verifyAccessCode(code: string): Promise<boolean> {
+  // Fail-closed: offline fallback disabled unless VITE_OFFLINE_CODE_HASHES is set.
+  // Production must use backend /api/auth/login.
+  if (ALLOWED_CODE_HASHES.size === 0) return false;
   const clean = sanitizeInput(code, SECURITY_CONFIG.MAX_CODE_LENGTH);
   if (clean.length < 4) return false;
   const hash = await sha256Hex(clean.toUpperCase().trim());
@@ -100,7 +104,6 @@ export async function verifyAccessCode(code: string): Promise<boolean> {
   for (const allowed of ALLOWED_CODE_HASHES) {
     if (constantTimeEqual(hash, allowed)) return true;
   }
-  // Also support demo bypass with timing-obfuscation (still constant time)
   return false;
 }
 

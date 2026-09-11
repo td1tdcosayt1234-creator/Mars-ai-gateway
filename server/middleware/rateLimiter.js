@@ -1,6 +1,10 @@
-// rateLimiter.js - Hardened rate limiting (memory store)
+// rateLimiter.js - Hardened rate limiting (Redis-ready, file-backed brute store)
 // Prevents brute-force, DoS, key-generation abuse
+// Multi-instance: set REDIS_URL + use rate-limit-redis (see redisClient.js).
+// Single-instance: memory + file-backed brute map (data/brute.json) survives restarts.
+// Keying uses default req.ip (trust proxy=1) — never X-Forwarded-For directly.
 import rateLimit from 'express-rate-limit';
+import { loadJson, saveJson } from '../utils/durable.js';
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -19,7 +23,6 @@ export const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
   handler: (req, res) => res.status(429).json({ error: 'Too many login attempts. Try in 15 minutes.' })
 });
 
@@ -31,8 +34,23 @@ export const keyGenLimiter = rateLimit({
   message: { error: 'Key generation rate limited (10/min)' }
 });
 
-// In-memory brute-force tracker (supplements rateLimit)
+// In-memory brute-force tracker (supplements rateLimit), persisted to disk.
+// For multi-instance, set REDIS_URL and share via Redis (redisClient.getRedis()).
 const attempts = new Map();
+try {
+  const saved = loadJson('brute.json', []);
+  for (const [ip, rec] of saved) {
+    if (typeof ip === 'string' && rec && typeof rec.count === 'number') attempts.set(ip, rec);
+  }
+} catch {}
+let persistT = null;
+function persistBrute() {
+  if (persistT) return;
+  persistT = setTimeout(() => {
+    persistT = null;
+    try { saveJson('brute.json', [...attempts.entries()].slice(-500)); } catch {}
+  }, 2000);
+}
 export function checkBrute(ip) {
   const now = Date.now();
   const rec = attempts.get(ip) || { count: 0, firstTs: now, blockedUntil: 0 };
@@ -45,8 +63,9 @@ export function recordBrute(ip, success) {
   let rec = attempts.get(ip);
   if (!rec) rec = { count: 0, firstTs: now, blockedUntil: 0 };
   if (now - rec.firstTs > 15 * 60 * 1000) { rec.count = 0; rec.firstTs = now; rec.blockedUntil = 0; }
-  if (success) { attempts.delete(ip); return; }
+  if (success) { attempts.delete(ip); persistBrute(); return; }
   rec.count += 1;
   if (rec.count >= 5) rec.blockedUntil = now + 15 * 60 * 1000;
   attempts.set(ip, rec);
+  persistBrute();
 }

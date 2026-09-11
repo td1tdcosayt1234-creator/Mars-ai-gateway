@@ -1,16 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KeyGeneratorCard } from '../components/KeyGeneratorCard';
-import { Sparkles, BrainCircuit, Zap, Eye, Cpu, ArrowRight } from 'lucide-react';
+import { Sparkles, BrainCircuit, Zap, Eye, Cpu, ArrowRight, KeyRound } from 'lucide-react';
 import { playTerminalBlip } from '../utils/sound';
 import { motion } from 'motion/react';
+import { isSessionValid } from '../utils/security';
+import { verifyBackend } from '../utils/api';
 
 export function HomePage({
   setIsTerminalOpen,
-  handleGenerateKey,
-  handleOpenPlayground,
 }: any) {
   const navigate = useNavigate();
+  const [checkingAuth, setCheckingAuth] = useState(false);
+
+  // Get API: logged in → /dashboard, else → /login
+  const handleGetApi = async () => {
+    playTerminalBlip(800);
+    if (isSessionValid()) {
+      navigate('/dashboard');
+      return;
+    }
+    setCheckingAuth(true);
+    try {
+      const ok = await verifyBackend().catch(() => false);
+      navigate(ok ? '/dashboard' : '/login');
+    } catch {
+      navigate('/login');
+    } finally {
+      setCheckingAuth(false);
+    }
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -54,14 +72,32 @@ export function HomePage({
             <span>Ares Neural Core v2.4</span>
           </motion.div>
 
-          <motion.h1 variants={itemVariants} className="font-display text-5xl sm:text-6xl lg:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-br from-white via-white to-white/40 tracking-tight leading-[1.05]">
+          <motion.h1 variants={itemVariants} className="font-display text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05] text-white">
             Deep-Space <br />
-            <span className="text-amber-500 text-glow-amber drop-shadow-xl">AI Intelligence.</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-400 to-violet-500 drop-shadow-[0_0_25px_rgba(56,189,248,0.35)]">AI Intelligence.</span>
           </motion.h1>
 
           <motion.p variants={itemVariants} className="text-lg lg:text-xl text-slate-400 leading-relaxed max-w-2xl font-sans font-light">
             Access state-of-the-art multimodal reasoning, lightning-fast edge inference, and spatial vision models directly from the Martian gateway. Engineered for zero-latency planetary relay.
           </motion.p>
+
+          <motion.div variants={itemVariants} className="flex flex-wrap items-center gap-4 pt-2">
+            <button
+              onClick={handleGetApi}
+              disabled={checkingAuth}
+              className="group flex items-center gap-2 px-7 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm transition-all shadow-[0_0_30px_rgba(245,158,11,0.35)] disabled:opacity-60 disabled:cursor-wait"
+            >
+              <KeyRound className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+              {checkingAuth ? 'Checking session...' : 'Get API'}
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button
+              onClick={() => { playTerminalBlip(600); navigate('/models'); }}
+              className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold text-sm transition-colors"
+            >
+              View Models
+            </button>
+          </motion.div>
         </div>
 
         {/* Model Options Showcase */}
@@ -138,17 +174,41 @@ export function HomePage({
         </motion.div>
       </div>
 
-      {/* Right Column: Key Generator (Get API) */}
+      {/* Right Column: Get API Access */}
       <motion.div variants={itemVariants} className="w-full xl:w-auto flex justify-center xl:justify-end shrink-0 xl:mt-8">
-        <div className="relative">
+        <div className="relative w-full max-w-md">
           {/* Subtle glow behind the card for visual hierarchy */}
           <div className="absolute -inset-4 bg-amber-500/10 blur-3xl rounded-full pointer-events-none opacity-50"></div>
-          
-          <KeyGeneratorCard
-            onGenerateKey={handleGenerateKey}
-            onOpenTerminal={() => setIsTerminalOpen(true)}
-            onOpenPlayground={handleOpenPlayground}
-          />
+
+          <div className="relative p-8 rounded-3xl bg-black/60 border border-amber-500/20 backdrop-blur-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                <KeyRound className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white tracking-tight">Get API Access</h3>
+                <p className="text-xs text-slate-400 font-mono">Keys live in your dashboard vault</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Sign in to open your dashboard — manage keys, monitor usage, and test models in the playground.
+            </p>
+            <button
+              onClick={handleGetApi}
+              disabled={checkingAuth}
+              className="group w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm transition-all shadow-[0_0_25px_rgba(245,158,11,0.3)] disabled:opacity-60 disabled:cursor-wait"
+            >
+              <KeyRound className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+              {checkingAuth ? 'Checking session...' : 'Get API — Open Dashboard'}
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button
+              onClick={() => setIsTerminalOpen(true)}
+              className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-mono text-xs transition-colors"
+            >
+              &gt;_ or open Mars Terminal
+            </button>
+          </div>
         </div>
       </motion.div>
 

@@ -66,7 +66,7 @@ export const DocsModal: React.FC<DocsModalProps> = ({
               Include your issued API Key in the standard HTTP Authorization header:
             </p>
             <div className="bg-black/60 p-3.5 rounded-xl border border-white/10 font-mono text-xs text-slate-200">
-              Authorization: Bearer ak_mars_live_9f82d7a6e14b09c2b3e81<br />
+              Authorization: Bearer &lt;YOUR_API_KEY&gt;<br />
               X-Mars-Relay: olympus-primary<br />
               Content-Type: application/json
             </div>

@@ -1,10 +1,11 @@
 // auth.js - JWT authentication with httpOnly cookies + Bearer fallback
-// Constant-time compare for hashes, secure cookie flags
+// Constant-time compare for hashes, secure cookie flags, fail-closed secrets
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { config } from '../config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
-const JWT_EXPIRES = process.env.JWT_EXPIRES || '30m';
+const JWT_SECRET = config.jwtSecret;
+const JWT_EXPIRES = config.jwtExpires;
 
 export function signToken(payload) {
   const jti = crypto.randomUUID();
@@ -41,16 +42,13 @@ export function csrfCheck(req, res, next) {
   next();
 }
 
-// For code verification (SHA256 allowlist)
-const ALLOWED = new Set([
-  'c55d6cf023bb7f3eee1a914029c7548676b3adc5af011863dff9361eb7d671b1',
-  '8a84b6bc02483045e9947bb3ceb71a48b0c4c4133f8e53fb62ea0ddd01b8d699',
-  '3669aad75fda7c09de25f86650c33699cee368820c0fc8ef350711e6aff48cec',
-]);
+// For code verification (SHA256 allowlist from env, fail-closed — no defaults)
 export function verifyCode(code) {
   if (!code || code.length < 4 || code.length > 64) return false;
+  if (config.authCodeHashes.size === 0) return false;
   const h = crypto.createHash('sha256').update(code.toUpperCase().trim()).digest('hex');
-  for (const a of ALLOWED) {
+  for (const a of config.authCodeHashes) {
+    if (a.length !== h.length) continue;
     if (crypto.timingSafeEqual(Buffer.from(h), Buffer.from(a))) return true;
   }
   return false;

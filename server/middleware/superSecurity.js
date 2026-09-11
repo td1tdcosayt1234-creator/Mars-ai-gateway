@@ -50,16 +50,12 @@ export function recordBadIP(ip){
   BAD_IP_CACHE.set(ip, rec);
 }
 
-// 2FA hook (TOTP mock - production use speakeasy)
-const totpStore=new Map(); // userId -> secret
-export function generateTOTPSecret(userId){
-  const sec=crypto.randomBytes(20).toString('base64url');
-  totpStore.set(userId, sec);
-  return sec;
+// 2FA hook — DEPRECATED mock removed. Use server/utils/totp.js (RFC6238) via
+// server/routes/twoFactor.js + tier2Core mark2FAVerified. This stub stays
+// fail-closed so legacy imports cannot bypass 2FA.
+export function generateTOTPSecret(_userId){
+  throw new Error('Deprecated: use POST /api/2fa/setup (RFC6238 TOTP)');
 }
-export function verifyTOTP(userId, token){
-  const sec=totpStore.get(userId);
-  if(!sec) return false;
-  // mock: valid if token === 6 digits and sec exists (real: RFC6238)
-  return /^\d{6}$/.test(token);
+export function verifyTOTP(_userId, _token){
+  return false;
 }

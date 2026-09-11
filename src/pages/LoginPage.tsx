@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Orbit, Fingerprint, Lock, ArrowRight, ShieldAlert, Clock, Eye, EyeOff, Server, Github, Chrome } from 'lucide-react';
+import { Orbit, Fingerprint, Lock, ArrowRight, ShieldAlert, Clock, Eye, EyeOff, Server, GitBranch, Globe } from 'lucide-react';
 import { playTerminalBlip } from '../utils/sound';
 import { motion } from 'motion/react';
 import {
-  verifyAccessCode,
   isLockedOut,
   getLockoutRemainingMs,
   recordLoginAttempt,
@@ -14,7 +13,7 @@ import {
   SECURITY_CONFIG,
   auditLog,
 } from '../utils/security';
-import { loginBackend, verifyBackend, hasBackendToken } from '../utils/api';
+import { loginBackend, verifyBackend } from '../utils/api';
 
 export function LoginPage() {
   const [accessCode, setAccessCode] = useState('');
@@ -32,24 +31,22 @@ export function LoginPage() {
         const c = await fetch('/api/health', { method: 'GET' }).then(r=>r.ok).catch(()=>false);
         setBackendMode(c ? 'online' : 'offline');
       } catch { setBackendMode('offline'); }
-    })();
-    // OAuth token in URL hash/query (from backend redirect)
-    const params=new URLSearchParams(window.location.search);
-    const oauthToken=params.get('token');
-    const oauth=params.get('oauth');
-    if(oauthToken){
-      localStorage.setItem('ares_jwt', oauthToken);
-      await createSession();
-      auditLog('login_oauth_'+oauth, 'jwt stored');
-      window.history.replaceState({}, '', '/dashboard');
-      navigate('/dashboard', { replace: true });
-      return;
-    }
-    (async () => {
-      if (hasBackendToken()) {
+      // OAuth callback: backend sets httpOnly ares_token cookie — never accept JWT via URL.
+      const params = new URLSearchParams(window.location.search);
+      const oauth = params.get('oauth');
+      if (oauth) {
+        window.history.replaceState({}, '', '/dashboard');
         const ok = await verifyBackend().catch(()=>false);
-        if (ok) { navigate('/dashboard', { replace: true }); return; }
+        if (ok) {
+          await createSession();
+          auditLog('login_oauth_'+oauth, 'cookie session verified');
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+        window.history.replaceState({}, '', '/login');
       }
+      const ok = await verifyBackend().catch(()=>false);
+      if (ok) { navigate('/dashboard', { replace: true }); return; }
       if (isSessionValid()) navigate('/dashboard', { replace: true });
     })();
   }, [navigate]);
@@ -94,57 +91,33 @@ export function LoginPage() {
     playTerminalBlip(800);
     setIsLoading(true);
     try {
-      if (backendMode !== 'offline') {
-        try {
-          const res = await loginBackend(clean);
-          if (res.token) {
-            await createSession();
-            recordLoginAttempt(true);
-            auditLog('login_success_backend', `backend jwt`);
-            setIsLoading(false);
-            navigate('/dashboard');
-            return;
-          }
-        } catch (be: any) {
-          if (be.message && !be.message.includes('Failed to fetch') && !be.message.includes('NetworkError')) {
-            recordLoginAttempt(false);
-            const remaining = getLockoutRemainingMs();
-            if (remaining > 0) setError(`Too many failed attempts. Locked for ${formatLockout(remaining)}.`);
-            else {
-              const left = attemptsLeft - 1;
-              setError(be.message + ` ${Math.max(0, left)} attempts left.`);
-            }
-            playTerminalBlip(220);
-            setIsLoading(false);
-            auditLog('login_fail_backend', be.message.slice(0,80));
-            return;
-          }
-          setBackendMode('offline');
+      // Backend is source of truth — no offline code bypass (fail-closed).
+      try {
+        const res = await loginBackend(clean);
+        if (res.token) {
+          await createSession();
+          recordLoginAttempt(true);
+          auditLog('login_success_backend', `backend jwt`);
+          setIsLoading(false);
+          navigate('/dashboard');
+          return;
         }
-      }
-      const start = Date.now();
-      const minDelay = 600 + Math.floor(Math.random() * 300);
-      const ok = await verifyAccessCode(clean);
-      const elapsed = Date.now() - start;
-      if (elapsed < minDelay) await new Promise(r => setTimeout(r, minDelay - elapsed));
-      if (ok) {
-        recordLoginAttempt(true);
-        await createSession();
-        auditLog('login_success_offline', `client fallback`);
-        setIsLoading(false);
-        navigate('/dashboard');
-      } else {
+      } catch (be: any) {
         recordLoginAttempt(false);
-        auditLog('login_fail_offline', `invalid code len=${clean.length}`);
         const remaining = getLockoutRemainingMs();
         if (remaining > 0) setError(`Too many failed attempts. Locked for ${formatLockout(remaining)}.`);
         else {
+          const msg = be?.message || 'Login failed';
           const left = attemptsLeft - 1;
-          setError(`Invalid authorization cipher. ${Math.max(0, left)} attempts remaining before lockout.`);
+          setError(msg + ` ${Math.max(0, left)} attempts left.`);
         }
         playTerminalBlip(220);
         setIsLoading(false);
+        auditLog('login_fail_backend', String(be?.message || 'fail').slice(0,80));
+        return;
       }
+      setError('Authentication service unavailable. Please retry.');
+      setIsLoading(false);
     } catch (err: any) {
       setIsLoading(false);
       setError('Authentication subsystem error. Please retry.');
@@ -175,10 +148,10 @@ export function LoginPage() {
         {/* Super Security OAuth */}
         <div className="grid grid-cols-2 gap-3 mb-5">
           <a href="/api/auth/oauth/github" onClick={()=> playTerminalBlip(700)} className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white text-black font-bold text-sm hover:bg-slate-100 transition-colors border border-white/10">
-            <Github className="w-4 h-4" /> GitHub
+            <GitBranch className="w-4 h-4" /> GitHub
           </a>
           <a href="/api/auth/oauth/google" onClick={()=> playTerminalBlip(700)} className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold text-sm backdrop-blur transition-colors">
-            <Chrome className="w-4 h-4 text-red-400" /> Google
+            <Globe className="w-4 h-4 text-red-400" /> Google
           </a>
         </div>
         <div className="relative flex items-center gap-2 mb-5">
@@ -191,7 +164,7 @@ export function LoginPage() {
           <div className="space-y-2">
             <label className="text-xs font-mono text-slate-400 uppercase tracking-wider flex items-center gap-2"><Lock className="w-3.5 h-3.5" /> Security Code</label>
             <div className="relative">
-              <input type={showCode ? 'text' : 'password'} value={accessCode} onChange={(e) => setAccessCode(e.target.value.slice(0, SECURITY_CONFIG.MAX_CODE_LENGTH))} placeholder="MARS-OLYMPUS-2026" className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 pr-10 text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 transition-all font-mono text-sm disabled:opacity-50" required disabled={isLocked || isLoading} autoComplete="off" spellCheck={false} maxLength={SECURITY_CONFIG.MAX_CODE_LENGTH} />
+              <input type={showCode ? 'text' : 'password'} value={accessCode} onChange={(e) => setAccessCode(e.target.value.slice(0, SECURITY_CONFIG.MAX_CODE_LENGTH))} placeholder="Enter authorization cipher" className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 pr-10 text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 transition-all font-mono text-sm disabled:opacity-50" required disabled={isLocked || isLoading} autoComplete="off" spellCheck={false} maxLength={SECURITY_CONFIG.MAX_CODE_LENGTH} />
               <button type="button" onClick={() => setShowCode(!showCode)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white transition-colors" tabIndex={-1}>{showCode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
             </div>
             <div className="flex justify-between text-[11px] font-mono"><span className={attemptsLeft <= 2 ? 'text-amber-400' : 'text-slate-500'}>Attempts left: {isLocked ? 0 : attemptsLeft}</span><span className="text-slate-500">Super: JWT 30m + HMAC + AES-GCM</span></div>

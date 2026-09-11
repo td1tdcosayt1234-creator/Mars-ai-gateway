@@ -2,24 +2,30 @@
 // Only runs AFTER Tier1 pass. Requires valid Tier1 sig + JWT + optional 2FA + RBAC
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { config } from '../config.js';
 
-const JWT_SECRET=process.env.JWT_SECRET || 'dev_secret';
-const TIER_HMAC=process.env.TIER_HMAC || 'tier1_tier2_shared_dev';
+const JWT_SECRET = config.jwtSecret;
+const TIER_HMAC = config.tierHmac;
 
 // 2FA session store: userId -> { verifiedUntil }
 const twoFAStore=new Map();
 
 export function tier2Guard(req,res,next){
-  // 1. Verify Tier1 passed
+  // 1. Verify Tier1 passed + HMAC recomputed (fail-closed, constant-time)
   if(!req.tier1) return res.status(403).json({ error:'Tier2: Tier1 bypass detected', tier:2 });
-  const sig=req.headers['x-tier1-sig'];
-  const ts=req.headers['x-tier1-ts'];
-  if(!sig || !ts || Math.abs(Date.now()-parseInt(ts,10))> 30*1000){
+  const sig = req.headers['x-tier1-sig'];
+  const ts = req.headers['x-tier1-ts'];
+  if(typeof sig !== 'string' || typeof ts !== 'string') {
     return res.status(403).json({ error:'Tier2: Invalid Tier1 signature', tier:2 });
   }
-  // Verify HMAC (timingSafe)
-  // Note: payload must match tier1's payload; simplified check: presence only for demo
-  // In prod, re-compute: crypto.createHmac('sha256',TIER_HMAC).update(`${req.method}:${req.path}:${ts}`).digest('hex')
+  const tsNum = parseInt(ts, 10);
+  if(!Number.isFinite(tsNum) || Math.abs(Date.now() - tsNum) > 30*1000){
+    return res.status(403).json({ error:'Tier2: Invalid Tier1 signature', tier:2 });
+  }
+  const expected = crypto.createHmac('sha256', TIER_HMAC).update(`${req.method}:${req.path}:${ts}`).digest('hex');
+  if(expected.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))){
+    return res.status(403).json({ error:'Tier2: Invalid Tier1 signature', tier:2 });
+  }
 
   // 2. JWT must exist (already via authenticate, but double-check)
   const auth=req.headers.authorization||'';

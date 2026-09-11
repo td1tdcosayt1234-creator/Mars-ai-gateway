@@ -1,10 +1,15 @@
 // secureStore.js - Encrypted at-rest API key vault (AES-256-GCM + hash index)
-// Never store plaintext secrets; hash for lookup, encrypt for storage
+// Never store plaintext secrets; hash for lookup, encrypt for storage.
+// Persistence: encrypted blobs persisted to data/secureStore.json (0600) so
+// single-instance restarts don't lose keys. Multi-instance must set REDIS_URL
+// and share via Redis (see redisClient.js) + real DB in future.
 import crypto from 'crypto';
+import { config } from '../config.js';
+import { loadJson, saveJson } from './durable.js';
 
 const ALG = 'aes-256-gcm';
-const MASTER = process.env.MASTER_KEY || crypto.randomBytes(32).toString('hex'); // 32 bytes hex
-const masterKey = crypto.createHash('sha256').update(MASTER).digest(); // 32 bytes
+// PBKDF2-derived master (100k iterations) — never single SHA-256
+const masterKey = crypto.pbkdf2Sync(config.masterKey, 'mars-secure-store-v1', 100000, 32, 'sha256');
 
 function encrypt(text){
   const iv = crypto.randomBytes(12);
@@ -28,14 +33,39 @@ function hashSecret(secret){
 }
 
 class SecureStore {
-  constructor(){ this.map = new Map(); this.hashIndex = new Map(); }
+  constructor(){
+    this.map = new Map();
+    this.hashIndex = new Map();
+    // Restore encrypted blobs (never plaintext) from disk
+    try {
+      const saved = loadJson('secureStore.json', []);
+      for (const r of saved) {
+        if (r && r.id && r.key && r.hash) {
+          this.map.set(r.id, r);
+          this.hashIndex.set(r.hash, r.id);
+        }
+      }
+      if (saved.length) console.log(`[STORE] restored ${saved.length} encrypted keys from disk`);
+    } catch {}
+  }
+  persist() {
+    try { saveJson('secureStore.json', [...this.map.values()]); } catch {}
+  }
   set(id, record){
     const secret = record.key;
+    // If record is already encrypted (restore path), don't re-encrypt
+    if (record.plain === false && record.hash) {
+      this.map.set(id, record);
+      this.hashIndex.set(record.hash, id);
+      this.persist();
+      return;
+    }
     const h = hashSecret(secret);
     const encrypted = encrypt(secret);
     const copy = { ...record, key: encrypted, hash: h, plain:false };
     this.map.set(id, copy);
     this.hashIndex.set(h, id);
+    this.persist();
   }
   get(id){
     const rec = this.map.get(id);
@@ -57,11 +87,11 @@ class SecureStore {
     if(!rec) return false;
     rec.status='revoked';
     this.map.set(id, rec);
+    this.persist();
     return true;
   }
   size(){ return this.map.size; }
 }
 
 export const secureStore = new SecureStore();
-// Seed demo
-secureStore.set('key_ares_01', { id:'key_ares_01', name:'Olympus Research Rover Agent', key:'ak_mars_live_9f82d7a6e14b09c2b3e81', tier:'gemini-2.5-flash', relayZone:'olympus-primary', status:'active', createdAt:'2026-08-22T08:14:00Z', rpmLimit:2500, monthlyQuota:50000000, tokensUsed:14829210 });
+// No demo seeds with real-looking secrets. Keys are issued via POST /api/keys only.

@@ -1,12 +1,28 @@
 // auditLogger.js - Tamper-evident, hash-chained audit logger (JS)
-// Every entry hashes previous, prevents silent deletion, sanitized, rate-limited
+// Every entry hashes previous, prevents silent deletion, sanitized, rate-limited.
+// Persistence: chain + lastHash persisted to data/audit.json (0600) so restarts
+// don't wipe evidence. Multi-instance must ship to central SIEM (stdout JSON).
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
+import { loadJson, saveJson } from '../utils/durable.js';
 
 const LOG_MAX = 500;
 const auditChain = [];
 let lastHash = crypto.createHash('sha256').update('GENESIS_MARS_782').digest('hex');
+try {
+  const saved = loadJson('audit.json', null);
+  if (saved && Array.isArray(saved.chain) && typeof saved.lastHash === 'string') {
+    for (const e of saved.chain.slice(-LOG_MAX)) auditChain.push(e);
+    if (/^[a-f0-9]{64}$/.test(saved.lastHash)) lastHash = saved.lastHash;
+  }
+} catch {}
+let persistT = null;
+function persistAudit() {
+  if (persistT) return;
+  persistT = setTimeout(() => {
+    persistT = null;
+    try { saveJson('audit.json', { lastHash, chain: auditChain.slice(-LOG_MAX) }); } catch {}
+  }, 5000);
+}
 
 function sanitize(str, max=256){
   if(typeof str!=='string') return String(str).slice(0,max);
@@ -28,7 +44,8 @@ export function audit(action, detail, ip='unknown', userId='-'){
   lastHash = h;
   auditChain.push(entry);
   if(auditChain.length > LOG_MAX) auditChain.shift();
-  // structured console (never log secrets)
+  persistAudit();
+  // structured console (never log secrets) — ship to SIEM in prod
   console.log(JSON.stringify({ type:'AUDIT', ...entry }));
   return entry;
 }

@@ -2,6 +2,7 @@
 // Blocks BEFORE reaching core: DDoS, bot, geo, WAF signatures, CAPTCHA
 // 2-tier design: Tier1 = Perimeter, Tier2 = Core Vault
 import crypto from 'crypto';
+import { config } from '../config.js';
 
 // WAF signatures (OWASP + AI)
 const WAF_SIGS = [
@@ -62,11 +63,15 @@ export function tier1Perimeter(req,res,next){
 }
 
 export function internalHmacSign(req,res,next){
-  // Tier1 → Tier2 internal HMAC (prevents bypassing Tier1)
-  const secret=process.env.TIER_HMAC || 'tier1_tier2_shared_dev';
-  const payload=`${req.method}:${req.path}:${Date.now()}`;
-  const sig=crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  req.headers['x-tier1-sig']=sig;
-  req.headers['x-tier1-ts']=String(Date.now());
+  // Tier1 → Tier2 internal HMAC (prevents bypassing Tier1).
+  // Single timestamp shared between payload and header so Tier2 can recompute.
+  const secret = config.tierHmac;
+  const ts = String(Date.now());
+  const payload = `${req.method}:${req.path}:${ts}`;
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  req.headers['x-tier1-sig'] = sig;
+  req.headers['x-tier1-ts'] = ts;
+  // Internal attestation for Tier3 (not trusted from client — overwritten here)
+  req.headers['x-tier2-sig'] = crypto.createHmac('sha256', secret).update(`tier2:${payload}:${sig}`).digest('hex');
   next();
 }

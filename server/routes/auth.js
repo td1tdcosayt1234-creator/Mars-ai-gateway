@@ -3,12 +3,14 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { verifyCode, signToken } from '../middleware/auth.js';
 import { loginLimiter, checkBrute, recordBrute } from '../middleware/rateLimiter.js';
+import { config } from '../config.js';
 import crypto from 'crypto';
 
 const router = express.Router();
 
 function getIp(req) {
-  return (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || 'unknown';
+  // Never trust X-Forwarded-For directly — use req.ip (trust proxy=1)
+  return req.ip || 'unknown';
 }
 function sanitize(s, max = 64) {
   if (typeof s !== 'string') return '';
@@ -36,9 +38,11 @@ router.post('/login', loginLimiter, body('code').isString().trim().isLength({ mi
   recordBrute(ip, true);
   const token = signToken({ ip, ua: req.headers['user-agent']?.slice(0, 80) });
   const csrf = crypto.randomBytes(32).toString('hex');
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = config.isProd;
   res.cookie('ares_token', token, { httpOnly: true, secure: isProd, sameSite: 'strict', maxAge: 30 * 60 * 1000, path: '/' });
   res.cookie('csrf_token', csrf, { httpOnly: false, secure: isProd, sameSite: 'strict', path: '/' });
+  // Token returned for non-browser API clients; browser SPA must rely on
+  // httpOnly cookie and must NOT persist this in localStorage (XSS).
   res.json({ token, csrf, expiresIn: 1800 });
 });
 

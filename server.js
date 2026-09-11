@@ -11,8 +11,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
-import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import { config } from './server/config.js';
 import { audit, auditMiddleware, verifyChain } from './server/middleware/auditLogger.js';
 import { guardPrototypePollution, xssGuard, strictJsonLimit } from './server/middleware/validation.js';
 import { secureStore } from './server/utils/secureStore.js';
@@ -27,55 +27,35 @@ import aiGateway from './server/routes/aiGateway.js';
 import { aiFirewall } from './server/middleware/aiFirewall.js';
 import { quotaGuard } from './server/middleware/tenantQuota.js';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '5000', 10);
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
-const JWT_EXPIRES = process.env.JWT_EXPIRES || '30m';
-const NODE_ENV = process.env.NODE_ENV || 'development';
-const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+const PORT = config.port;
+const JWT_SECRET = config.jwtSecret;
+const JWT_EXPIRES = config.jwtExpires;
+const NODE_ENV = config.nodeEnv;
+const APP_URL = config.appUrl;
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 
-if (!process.env.JWT_SECRET) {
-  console.warn('[SECURITY] JWT_SECRET not set — using ephemeral random secret (sessions will invalidate on restart). Set JWT_SECRET in .env');
-}
-if (NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  console.error('[FATAL] JWT_SECRET required in production');
-  process.exit(1);
-}
+// config.js already fail-closes in production for JWT_SECRET/TIER_HMAC/MASTER_KEY/AUTH_CODE_HASHES
 
 // ---------------------------------------------------------------------------
 // In-memory stores (production: replace with DB/Redis)
+// NOTE: single source of truth is secureStore (AES-GCM). No separate apiKeys map,
+// no demo seeds with real-looking secrets.
 // ---------------------------------------------------------------------------
 const loginAttempts = new Map(); // ip -> {count, firstTs, blockedUntil}
 const auditLog = []; // keep last 200
-const apiKeys = new Map(); // id -> record
+const apiKeys = secureStore; // alias — unified encrypted store
 const KEY_RPM = { 'gemini-2.5-flash':2500,'gemini-2.5-pro':1000,'ares-neural-70b':5000,'deep-space-vision':800 };
 const VALID_TIERS = new Set(Object.keys(KEY_RPM));
 const VALID_ZONES = new Set(['olympus-primary','chryse-ground','phobos-orbital','valles-marineris']);
 
-// Pre-seed with mock keys (encrypted at rest in memory)
-import { createRequire } from 'module';
-let initialKeys = [];
-try {
-  const mockPath = path.join(__dirname, 'src/data/mockData.ts');
-  // fallback static
-  initialKeys = [
-    { id:'key_ares_01', name:'Olympus Research Rover Agent', key:'ak_mars_live_9f82d7a6e14b09c2b3e81', tier:'gemini-2.5-flash', relayZone:'olympus-primary', createdAt:'2026-08-22T08:14:00Z', status:'active', tokensUsed:14829210, requestCount:38490, monthlyQuota:50000000, rpmLimit:2500 },
-  ];
-} catch {}
-initialKeys.forEach(k=> apiKeys.set(k.id, k));
+// No pre-seed. Keys issued via POST /api/keys only.
 
-// Hashed allowlist for auth codes (SHA256 hex, same as frontend)
-const ALLOWED_HASHES = new Set([
-  'c55d6cf023bb7f3eee1a914029c7548676b3adc5af011863dff9361eb7d671b1', // MARS-OLYMPUS-2026
-  '8a84b6bc02483045e9947bb3ceb71a48b0c4c4133f8e53fb62ea0ddd01b8d699', // ARES-ADMIN-782
-  '3669aad75fda7c09de25f86650c33699cee368820c0fc8ef350711e6aff48cec', // MARS-GATEWAY-DEMO
-]);
+// Hashed allowlist from env (fail-closed, no defaults)
+const ALLOWED_HASHES = config.authCodeHashes;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,8 +68,12 @@ function constantTimeEqual(a,b){
 }
 function verifyCode(code){
   if (!code || typeof code!=='string' || code.length<4 || code.length>64) return false;
+  if (ALLOWED_HASHES.size === 0) return false;
   const h = sha256Hex(code);
-  for(const allowed of ALLOWED_HASHES){ if(constantTimeEqual(h, allowed)) return true; }
+  for(const allowed of ALLOWED_HASHES){
+    if (allowed.length !== h.length) continue;
+    if(constantTimeEqual(h, allowed)) return true;
+  }
   return false;
 }
 function sanitize(str, max=1000){
@@ -113,7 +97,9 @@ function generateSecureKey(){
   return { id, secret:`ak_mars_live_${hex}` };
 }
 function getClientIp(req){
-  return (req.headers['x-forwarded-for']?.toString().split(',')[0].trim()) || req.ip || req.socket.remoteAddress || 'unknown';
+  // Use Express req.ip (respects trust proxy=1 for Render). Never trust
+  // X-Forwarded-For directly — it is client-spoofable and would bypass rate limits.
+  return req.ip || req.socket?.remoteAddress || 'unknown';
 }
 
 // ---------------------------------------------------------------------------
@@ -146,14 +132,15 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'same-origin' },
 }));
 
-// CORS - strict allowlist
+// CORS - strict allowlist (fail-closed in prod, no null-origin bypass for cookies)
 const allowOrigins = [APP_URL, 'http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000'].filter(Boolean);
 app.use(cors({
   origin: (origin, cb)=>{
-    if(!origin) return cb(null, true); // same-origin / curl
+    // No Origin (curl/health, same-origin) — allow but cookies still require auth
+    if(!origin) return cb(null, true);
     if(allowOrigins.includes(origin)) return cb(null, true);
     // In dev, allow any localhost
-    if(NODE_ENV!=='production' && origin.includes('localhost')) return cb(null, true);
+    if(NODE_ENV!=='production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
     return cb(new Error('CORS blocked'), false);
   },
   credentials: true,
@@ -197,13 +184,12 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
-// Stricter login limiter: 5 / 15min
+// Stricter login limiter: 5 / 15min — keyed by req.ip (trust proxy=1), never XFF
 const loginLimiter = rateLimit({
   windowMs: 15*60*1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req)=> getClientIp(req),
   handler: (req,res)=>{ addAudit('rate_limit_login','login blocked', getClientIp(req)); res.status(429).json({ error:'Too many login attempts. Try in 15 minutes.' }); }
 });
 
@@ -255,11 +241,16 @@ function recordBrute(ip, success){
 }
 
 // ---------------------------------------------------------------------------
-// ROUTES
+// ROUTES — Tier2 guard mounted BEFORE sensitive routes (Express order matters)
 // ---------------------------------------------------------------------------
 app.use('/api/auth/oauth', oauthRouter);
 app.use('/api/2fa', twoFactorRouter);
+// Vault router has its own tier3Vault+tier2Guard internally
 app.use('/api/vault', deepVaultRouter);
+// Protect keys/metrics/audit with Tier2 BEFORE defining handlers
+app.use('/api/keys', tier2Guard);
+app.use('/api/metrics', tier2Guard);
+app.use('/api/audit', tier2Guard);
 app.get('/api/chain/verify', authenticate, (req,res)=> res.json(verifyChain()));
 app.get('/api/health', (req,res)=>{
   res.json({ status:'ok', uptime: process.uptime(), sol: 782, secure: true, csp: 'enabled', hsts: 'enabled' });
@@ -319,18 +310,16 @@ function csrfCheck(req,res,next){
 }
 
 app.get('/api/keys', authenticate, (req,res)=>{
-  const list=[...apiKeys.values()].map(k=>({
-    id:k.id, name:k.name, tier:k.tier, relayZone:k.relayZone, status:k.status, createdAt:k.createdAt, rpmLimit:k.rpmLimit, monthlyQuota:k.monthlyQuota, tokensUsed:k.tokensUsed,
-    // mask secret: show only last 4
-    keyMasked: k.key.slice(0,14)+'••••'+k.key.slice(-4)
-  }));
-  res.json({ keys: list });
+  res.json({ keys: apiKeys.listMasked() });
 });
 
 app.post('/api/keys', authenticate, keyGenLimiter, csrfCheck, [
   body('tier').isString().custom(v=> VALID_TIERS.has(v)).withMessage('Invalid tier'),
   body('relayZone').isString().custom(v=> VALID_ZONES.has(v)).withMessage('Invalid relay'),
   body('name').optional().isString().trim().isLength({ min:2, max:64 }).matches(/^[\w\s\-\.\(\)]+$/).withMessage('Invalid name'),
+  body('models').optional().isArray({ max: 4 }),
+  body('expiresInDays').optional().isInt({ min: 1, max: 365 }),
+  body('ipAllowlist').optional().isArray({ max: 10 }),
 ], (req,res)=>{
   const errors=validationResult(req);
   if(!errors.isEmpty()) return res.status(400).json({ error:'Validation failed', details: errors.array() });
@@ -341,16 +330,27 @@ app.post('/api/keys', authenticate, keyGenLimiter, csrfCheck, [
   if(!VALID_TIERS.has(tier) || !VALID_ZONES.has(zone)) return res.status(400).json({ error:'Invalid tier/zone' });
 
   // per-user limit 20 (check count)
-  if(apiKeys.size >= 50) return res.status(429).json({ error:'Global key limit reached' });
+  if(apiKeys.size() >= 50) return res.status(429).json({ error:'Global key limit reached' });
 
+  const models = Array.isArray(req.body.models) && req.body.models.length
+    ? [...new Set(req.body.models.map(m => sanitize(m,30)).filter(m => VALID_TIERS.has(m)))]
+    : [tier];
+  if(!models.includes(tier)) models.push(tier);
+  const days = req.body.expiresInDays ? parseInt(req.body.expiresInDays,10) : 90;
+  const expiresAt = new Date(Date.now()+days*24*60*60*1000).toISOString();
+  const ipAllowlist = Array.isArray(req.body.ipAllowlist)
+    ? req.body.ipAllowlist.map(ip=>sanitize(ip,45)).filter(ip=>/^[0-9a-fA-F:.]{7,45}$/.test(ip)).slice(0,10)
+    : [];
   const { id, secret } = generateSecureKey();
   const rec={
     id, key: secret, name, tier, relayZone: zone,
     createdAt: new Date().toISOString(), lastUsedAt:'Never', status:'active',
-    tokensUsed:0, requestCount:0, monthlyQuota: parseInt({ 'gemini-2.5-flash':'50','gemini-2.5-pro':'20','ares-neural-70b':'100','deep-space-vision':'10' }[tier]||'50')*1_000_000, rpmLimit: KEY_RPM[tier]
+    tokensUsed:0, requestCount:0, monthlyQuota: parseInt({ 'gemini-2.5-flash':'50','gemini-2.5-pro':'20','ares-neural-70b':'100','deep-space-vision':'10' }[tier]||'50')*1_000_000, rpmLimit: KEY_RPM[tier],
+    models, scopes:['chat:write','tokenize:write'], ipAllowlist, expiresAt
   };
   apiKeys.set(id, rec);
   addAudit('key_gen', `${id} tier=${tier}`, getClientIp(req));
+  // Plaintext returned once at creation only — list endpoint is masked
   res.status(201).json({ key: rec });
 });
 
@@ -358,19 +358,15 @@ app.delete('/api/keys/:id', authenticate, csrfCheck, param('id').isString().trim
   const errors=validationResult(req);
   if(!errors.isEmpty()) return res.status(400).json({ error:'Invalid id' });
   const id=sanitize(req.params.id,128);
-  const k=apiKeys.get(id) || [...apiKeys.values()].find(v=> v.key===id);
+  // Lookup by id only — never accept raw secret as id (prevents oracle)
+  const k=apiKeys.get(id);
   if(!k) return res.status(404).json({ error:'Key not found' });
-  k.status='revoked';
-  apiKeys.set(k.id, k);
+  apiKeys.revoke(k.id);
   addAudit('key_revoke', id.slice(0,32), getClientIp(req));
   res.json({ ok:true, id:k.id });
 });
 
 app.use('/api', aiGateway);
-// Tier2 vault guard for sensitive API (keys, metrics, audit) - 2-tier hack-proof
-app.use('/api/keys', tier2Guard);
-app.use('/api/metrics', tier2Guard);
-app.use('/api/audit', tier2Guard);
 app.get('/api/metrics', authenticate, (req,res)=>{
   // mock live metrics (in prod, pull from real telemetry)
   const now=Date.now();
@@ -404,8 +400,8 @@ if(fs.existsSync(distPath)){
       if(p.endsWith('.html')) res.setHeader('Cache-Control','no-cache');
     }
   }));
-  // SPA fallback
-  app.get('*', (req,res)=>{
+  // SPA fallback (Express 5: use regex, not '*')
+  app.get(/.*/, (req,res)=>{
     if(req.path.startsWith('/api/')) return res.status(404).json({ error:'Not found' });
     res.sendFile(path.join(distPath,'index.html'));
   });

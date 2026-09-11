@@ -1,20 +1,21 @@
 /**
  * Mars Gateway — Secure Backend API Client
- * Handles JWT, CSRF, sanitized requests, auto-logout on 401
- * Keeps previous client-side encryption as fallback if backend unreachable
+ * httpOnly-cookie first: JWT lives in Secure/HttpOnly/SameSite cookie set by backend.
+ * In-memory Bearer is used only for non-browser API clients and is NEVER
+ * persisted to localStorage (XSS would steal it).
  */
 import { sanitizeInput } from './security';
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
+// In-memory only — cleared on reload, never localStorage
+let memToken: string | null = null;
+
 function getToken(): string | null {
-  try { return localStorage.getItem('ares_jwt'); } catch { return null; }
+  return memToken;
 }
 function setToken(t: string | null) {
-  try {
-    if (t) localStorage.setItem('ares_jwt', t);
-    else localStorage.removeItem('ares_jwt');
-  } catch {}
+  memToken = t;
 }
 function getCsrf(): string | null {
   try {
@@ -56,14 +57,14 @@ export async function loginBackend(code: string): Promise<{ token:string; csrf:s
   });
   const data = await res.json().catch(()=> ({}));
   if (!res.ok) throw new Error(data.error || 'Login failed');
+  // Keep in memory only for this tab — httpOnly cookie is the real session
   if (data.token) setToken(data.token);
   return data;
 }
 
 export async function verifyBackend(): Promise<boolean> {
-  const token = getToken();
-  if (!token) return false;
   try {
+    // Cookie-based verify works even with no in-memory token (reload-safe)
     const res = await secureFetch('/auth/verify');
     return res.ok;
   } catch { return false; }

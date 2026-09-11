@@ -11,40 +11,47 @@
     "preview": "vite preview",
     "start": "node server.js",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --test tests/security.test.js tests/ai-gateway.test.js",
+    "sbom": "npm sbom --sbom-format=cyclonedx --output-file=sbom.cyclonedx.json",
+    "verify": "npm test && npm run lint && node ../verify_fixes.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.1.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2",
+    "express": "^5.2.1",
     "express-rate-limit": "^7.5.0",
     "express-validator": "^7.2.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
-    "lucide-react": "^0.546.0",
+    "lucide-react": "^1.42.0",
     "motion": "^13.2.0",
+    "rate-limit-redis": "^4.2.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.3",
-    "vite": "^6.2.3"
+    "redis": "^4.7.0",
+    "vite": "^8.2.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.8",
     "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
+    "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": "^22.14.0",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
   }
 }

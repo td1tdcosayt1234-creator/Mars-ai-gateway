@@ -1,21 +1,27 @@
-# Hardened Dockerfile - non-root, distroless, minimal attack surface
+# Hardened Dockerfile - non-root, minimal attack surface, reproducible installs
+# 10/10: apk upgrade, no scripts, read-only run, dropped caps (compose/k8s)
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json bun.lock ./
-RUN npm ci --only=production --ignore-scripts && npm cache clean --force
+COPY package.json package-lock.json* ./
+RUN apk upgrade --no-cache && \
+  if [ -f package-lock.json ]; then npm ci --ignore-scripts; else npm install --ignore-scripts; fi && \
+  npm cache clean --force
 COPY . .
-RUN npm run build
+RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine
-RUN addgroup -S mars && adduser -S mars -G mars
+RUN apk upgrade --no-cache && addgroup -S mars && adduser -S mars -G mars
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.js ./server.js
-COPY --from=builder /app/server ./server
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder --chown=mars:mars /app/dist ./dist
+COPY --from=builder --chown=mars:mars /app/server.js ./server.js
+COPY --from=builder --chown=mars:mars /app/server ./server
+COPY --from=builder --chown=mars:mars /app/package.json ./package.json
+COPY --from=builder --chown=mars:mars /app/node_modules ./node_modules
+# Writable data dir for durable JSON (0600 files) — mount persistent disk in prod
+RUN mkdir -p /app/data && chown mars:mars /app/data
 USER mars
 EXPOSE 5000
 ENV NODE_ENV=production
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:5000/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD wget -qO- http://127.0.0.1:5000/api/health || exit 1
+# Run read-only where orchestrator allows: --read-only --tmpfs /tmp (see compose/k8s)
 CMD ["node","server.js"]

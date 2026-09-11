@@ -290,9 +290,6 @@ export default function App() {
           <Route path="/" element={
             <HomePage 
               setIsTerminalOpen={setIsTerminalOpen}
-              setIsTelemetryOpen={() => { /* no-op */ }}
-              handleGenerateKey={handleGenerateKey}
-              handleOpenPlayground={handleOpenPlayground}
             />
           } />
           <Route path="/models" element={<ModelsPage />} />

@@ -18,13 +18,14 @@ function securityHeadersPlugin(): Plugin {
         res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
         const csp = [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com",
+          "script-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com",
           "font-src 'self' https://fonts.gstatic.com data:",
           "img-src 'self' data: https: blob:",
           "connect-src 'self' ws: wss: http://localhost:5000 http://127.0.0.1:5000 https://api.github.com https://generativelanguage.googleapis.com",
           "frame-ancestors 'none'",
           "base-uri 'self'",
+          "form-action 'self'",
           "object-src 'none'",
         ].join('; ');
         res.setHeader('Content-Security-Policy', csp);

@@ -1,11 +1,13 @@
 // tier3DeepVault.js - TIER-3 DEEP VAULT (Data Plane, Zero-Trust, HSM, Immutable)
 // Only AFTER Tier1+Tier2 pass. Holds master keys, envelope encryption, canary, honeypot
 import crypto from 'crypto';
-import { secureStore } from '../utils/secureStore.js';
+import { config } from '../config.js';
 
-const MASTER_KEY = process.env.MASTER_KEY || crypto.randomBytes(32).toString('hex');
-const master = crypto.createHash('sha256').update(MASTER_KEY).digest(); // 32B
-const HONEY_TOKENS = new Set(['ak_mars_live_HONEY_1234567890abcdef', 'sk-honey-canary-999']);
+const MASTER_KEY = config.masterKey;
+// PBKDF2-derived master (100k iterations) — never single SHA-256
+const master = crypto.pbkdf2Sync(MASTER_KEY, 'mars-tier3-vault-v1', 100000, 32, 'sha256');
+// Honey tokens from env only — never hardcode real canaries in source
+const HONEY_TOKENS = config.honeyTokens;
 const MERKLE_LEAVES = [];
 let merkleRoot = crypto.createHash('sha256').update('GENESIS_TIER3').digest('hex');
 
@@ -47,10 +49,10 @@ export function tier3Vault(req,res,next){
   // 1. Must have Tier1+Tier2
   if(!req.tier1) return res.status(403).json({ error:'Tier3: Tier1 missing', tier:3 });
   if(!req.user) return res.status(401).json({ error:'Tier3: vault identity missing', tier:3 });
-  // 2. Canary / honeypot detection
+  // 2. Canary / honeypot detection (values from HONEY_TOKENS env, never logged)
   const keyId = req.headers['x-api-key'] || req.body?.keyId;
-  if(keyId && HONEY_TOKENS.has(keyId)){
-    console.error(`[TIER3 HONEYPOT] canary triggered ip=${req.ip} key=${keyId}`);
+  if(typeof keyId === 'string' && HONEY_TOKENS.size > 0 && HONEY_TOKENS.has(keyId)){
+    console.error(`[TIER3 HONEYPOT] canary triggered ip=${req.ip}`);
     // Alert + block IP 24h
     return res.status(418).json({ error:'Tier3: canary trap triggered - incident logged', tier:3, incident:true });
   }
@@ -59,10 +61,11 @@ export function tier3Vault(req,res,next){
   if(Date.now() - iat > 10*60*1000){
     return res.status(401).json({ error:'Tier3: vault session stale (>10m), re-auth', tier:3, reauth:true });
   }
-  // 4. Enclave attestation stub (verify Tier1+Tier2 HMAC chain)
+  // 4. Enclave attestation: Tier2 must have added its own sig (fail-closed in prod)
   if(!req.headers['x-tier1-sig'] || !req.headers['x-tier2-sig']){
-    // Tier2 should have added its own sig
-    // For demo, allow but log
+    if (config.isProd) {
+      return res.status(403).json({ error:'Tier3: tier attestation missing', tier:3 });
+    }
     console.warn(`[TIER3] missing tier2 sig ip=${req.ip}`);
   }
   req.tier3 = { vault: true, merkleRoot, envelopeEncrypt, envelopeDecrypt };

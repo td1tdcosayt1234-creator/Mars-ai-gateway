@@ -3,13 +3,17 @@ services:
     name: mars-ai-gateway
     runtime: node
     region: singapore
-    plan: free
+    plan: starter
     branch: main
     repo: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci --ignore-scripts && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
+    disk:
+      name: mars-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,12 +23,27 @@ services:
         value: https://mars-ai-gateway-free.onrender.com
       - key: JWT_SECRET
         generateValue: true
+      - key: TIER_HMAC
+        generateValue: true
+      - key: MASTER_KEY
+        generateValue: true
+      - key: KMS_PROVIDER
+        value: local
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: mars-redis
+          property: connectionString
+      - key: AUTH_CODE_HASHES
+        sync: false
+      - key: HONEY_TOKENS
+        sync: false
+      - key: ADMIN_SUBJECTS
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
-  - type: static_site
-    name: mars-ai-gateway-static
-    branch: main
-    repo: https://github.com/td1tdcosayt1234-creator/Mars-ai-gateway
-    buildCommand: npm install && npm run build
-    publishPath: dist
-    autoDeploy: true
+  - type: redis
+    name: mars-redis
+    region: singapore
+    plan: free
+    maxmemoryPolicy: noeviction
