@@ -3,16 +3,30 @@
 // Persistence: chain + lastHash persisted to data/audit.json (0600) so restarts
 // don't wipe evidence. Multi-instance must ship to central SIEM (stdout JSON).
 import crypto from 'crypto';
-import { loadJson, saveJson } from '../utils/durable.js';
+import { loadSecureWithLegacy, saveSecure } from '../utils/durable.js';
 
 const LOG_MAX = 500;
 const auditChain = [];
 let lastHash = crypto.createHash('sha256').update('GENESIS_MARS_782').digest('hex');
 try {
-  const saved = loadJson('audit.json', null);
+  const saved = loadSecureWithLegacy('audit.json', null);
   if (saved && Array.isArray(saved.chain) && typeof saved.lastHash === 'string') {
-    for (const e of saved.chain.slice(-LOG_MAX)) auditChain.push(e);
-    if (/^[a-f0-9]{64}$/.test(saved.lastHash)) lastHash = saved.lastHash;
+    // Verify chain on load: tampered files are discarded, never trusted
+    let prev = crypto.createHash('sha256').update('GENESIS_MARS_782').digest('hex');
+    let ok = saved.lastHash.length === 64;
+    for (const e of saved.chain.slice(-LOG_MAX)) {
+      if (!e || typeof e.hash !== 'string') { ok = false; break; }
+      const clone = { ...e }; delete clone.hash;
+      const expect = crypto.createHash('sha256').update(JSON.stringify(clone)).digest('hex');
+      if (e.hash !== expect || e.prev !== prev.slice(0, 16)) { ok = false; break; }
+      prev = e.hash;
+    }
+    if (ok) {
+      for (const e of saved.chain.slice(-LOG_MAX)) auditChain.push(e);
+      if (/^[a-f0-9]{64}$/.test(saved.lastHash)) lastHash = saved.lastHash;
+    } else {
+      console.error('[AUDIT] persisted chain failed verification — discarded (possible tamper)');
+    }
   }
 } catch {}
 let persistT = null;
@@ -20,7 +34,7 @@ function persistAudit() {
   if (persistT) return;
   persistT = setTimeout(() => {
     persistT = null;
-    try { saveJson('audit.json', { lastHash, chain: auditChain.slice(-LOG_MAX) }); } catch {}
+    try { saveSecure('audit.json', { lastHash, chain: auditChain.slice(-LOG_MAX) }); } catch {}
   }, 5000);
 }
 

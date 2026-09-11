@@ -4,7 +4,7 @@
 // Single-instance: memory + file-backed brute map (data/brute.json) survives restarts.
 // Keying uses default req.ip (trust proxy=1) — never X-Forwarded-For directly.
 import rateLimit from 'express-rate-limit';
-import { loadJson, saveJson } from '../utils/durable.js';
+import { loadSecureWithLegacy, saveSecure } from '../utils/durable.js';
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -34,11 +34,12 @@ export const keyGenLimiter = rateLimit({
   message: { error: 'Key generation rate limited (10/min)' }
 });
 
-// In-memory brute-force tracker (supplements rateLimit), persisted to disk.
+// Brute-force tracker (supplements rateLimit), sealed at rest — tampering with
+// lockout counters fails GCM auth instead of unlocking attackers.
 // For multi-instance, set REDIS_URL and share via Redis (redisClient.getRedis()).
 const attempts = new Map();
 try {
-  const saved = loadJson('brute.json', []);
+  const saved = loadSecureWithLegacy('brute.json', []);
   for (const [ip, rec] of saved) {
     if (typeof ip === 'string' && rec && typeof rec.count === 'number') attempts.set(ip, rec);
   }
@@ -48,7 +49,7 @@ function persistBrute() {
   if (persistT) return;
   persistT = setTimeout(() => {
     persistT = null;
-    try { saveJson('brute.json', [...attempts.entries()].slice(-500)); } catch {}
+    try { saveSecure('brute.json', [...attempts.entries()].slice(-500)); } catch {}
   }, 2000);
 }
 export function checkBrute(ip) {

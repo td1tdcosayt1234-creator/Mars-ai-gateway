@@ -5,18 +5,18 @@ import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { generateSecret, verifyTOTP, otpauthURL } from '../utils/totp.js';
 import { mark2FAVerified } from '../middleware/tier2Core.js';
-import { loadJson, saveJson } from '../utils/durable.js';
+import { loadSecureWithLegacy, saveSecure } from '../utils/durable.js';
 
 const router=express.Router();
-const store=new Map(); // userId -> secret
+const store=new Map(); // userId -> secret (TOTP seeds: sealed at rest, 0600)
 try {
-  const saved = loadJson('twoFactor.json', []);
+  const saved = loadSecureWithLegacy('twoFactor.json', []);
   for (const [k, v] of saved) {
     if (typeof k === 'string' && typeof v === 'string' && /^[A-Z2-7]+$/.test(v)) store.set(k, v);
   }
 } catch {}
 function persist2FA() {
-  try { saveJson('twoFactor.json', [...store.entries()]); } catch {}
+  try { saveSecure('twoFactor.json', [...store.entries()]); } catch {}
 }
 
 router.post('/setup', authenticate, (req,res)=>{

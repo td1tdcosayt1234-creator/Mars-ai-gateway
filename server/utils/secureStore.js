@@ -5,7 +5,7 @@
 // and share via Redis (see redisClient.js) + real DB in future.
 import crypto from 'crypto';
 import { config } from '../config.js';
-import { loadJson, saveJson } from './durable.js';
+import { loadSecureWithLegacy, saveSecure } from './durable.js';
 
 const ALG = 'aes-256-gcm';
 // PBKDF2-derived master (100k iterations) — never single SHA-256
@@ -36,9 +36,9 @@ class SecureStore {
   constructor(){
     this.map = new Map();
     this.hashIndex = new Map();
-    // Restore encrypted blobs (never plaintext) from disk
+    // Restore sealed vault (outer AES-GCM + per-record encryption)
     try {
-      const saved = loadJson('secureStore.json', []);
+      const saved = loadSecureWithLegacy('secureStore.json', []);
       for (const r of saved) {
         if (r && r.id && r.key && r.hash) {
           this.map.set(r.id, r);
@@ -49,7 +49,7 @@ class SecureStore {
     } catch {}
   }
   persist() {
-    try { saveJson('secureStore.json', [...this.map.values()]); } catch {}
+    try { saveSecure('secureStore.json', [...this.map.values()]); } catch {}
   }
   set(id, record){
     const secret = record.key;
@@ -75,12 +75,24 @@ class SecureStore {
   }
   getByHash(hash){ const id=this.hashIndex.get(hash); return id ? this.get(id) : null; }
   getBySecret(secret){ return this.getByHash(hashSecret(secret)); }
-  listMasked(){
-    return [...this.map.values()].map(r=> ({
-      id:r.id, name:r.name, tier:r.tier, relayZone:r.relayZone, status:r.status, createdAt:r.createdAt, rpmLimit:r.rpmLimit,
-      keyMasked: 'ak_mars_live_••••' + r.hash.slice(0,4),
-      hash: r.hash.slice(0,16) // for audit, not secret
-    }));
+  listMasked(owner, isAdmin){
+    // Strict: ownerless legacy rows are admin-only (never leak across users).
+    // Fresh keys always carry owner (set at POST /api/keys).
+    return [...this.map.values()]
+      .filter(r => isAdmin || (r.owner && r.owner === owner))
+      .map(r=> ({
+        id:r.id, name:r.name, tier:r.tier, relayZone:r.relayZone, status:r.status, createdAt:r.createdAt, rpmLimit:r.rpmLimit,
+        models:r.models, expiresAt:r.expiresAt,
+        keyMasked: 'ak_mars_live_••••' + r.hash.slice(0,4),
+        hash: r.hash.slice(0,16) // for audit, not secret
+      }));
+  }
+  // Ownership: service HMAC possession bypasses (secret itself is the proof),
+  // but id-based dashboard access requires owner match (or admin).
+  owns(id, owner, isAdmin){
+    const rec = this.map.get(id);
+    if(!rec) return false;
+    return !!(isAdmin || (rec.owner && rec.owner === owner));
   }
   revoke(id){
     const rec = this.map.get(id);
@@ -94,4 +106,5 @@ class SecureStore {
 }
 
 export const secureStore = new SecureStore();
+export { SecureStore }; // for unit tests (ownership, masking)
 // No demo seeds with real-looking secrets. Keys are issued via POST /api/keys only.

@@ -176,6 +176,55 @@ describe('dashboard 20x (backend-live, no localStorage JWT)', () => {
   });
 });
 
+describe('database-proof (hacker cannot reach the vault)', () => {
+  it('vault files sealed: tamper fails closed, no plaintext secrets', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const { saveSecure, loadSecure } = await import('../server/utils/durable.js');
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    void dir;
+    saveSecure('__test_seal.json', [{ id: 'x', key: 'supersecret' }]);
+    const back = loadSecure('__test_seal.json', null);
+    assert.ok(Array.isArray(back) && back[0].key === 'supersecret');
+    // Raw file must not contain the plaintext
+    const { readFileSync, writeFileSync, unlinkSync } = fs;
+    const { join } = path;
+    const root = join(dir, '..');
+    const raw = readFileSync(join(root, 'data', '__test_seal.json'), 'utf8');
+    assert.ok(!raw.includes('supersecret'));
+    // Tamper one byte → fallback (never loads forged data)
+    const parsed = JSON.parse(raw);
+    parsed.blob = 'A' + parsed.blob.slice(1);
+    writeFileSync(join(root, 'data', '__test_seal.json'), JSON.stringify(parsed));
+    assert.equal(loadSecure('__test_seal.json', 'FALLBACK'), 'FALLBACK');
+    unlinkSync(join(root, 'data', '__test_seal.json'));
+    for (const f of ['server/utils/secureStore.js', 'server/routes/twoFactor.js', 'server/utils/denylist.js', 'server/middleware/tenantQuota.js', 'server/middleware/rateLimiter.js', 'server/middleware/auditLogger.js']) {
+      assert.ok(read(f).includes('saveSecure') || read(f).includes('loadSecure'), `${f} must use sealed persistence`);
+    }
+  });
+  it('row-level ownership: users see only own keys', async () => {
+    const { SecureStore } = await import('../server/utils/secureStore.js');
+    const s = new SecureStore();
+    s.persist = () => {};
+    s.map.clear(); s.hashIndex.clear();
+    s.set('a1', { id: 'a1', name: 'A key', key: 'ak_mars_live_' + 'a'.repeat(48), tier: 'gemini-2.5-flash', relayZone: 'olympus-primary', status: 'active', createdAt: 'x', rpmLimit: 1, owner: 'userA' });
+    s.set('b1', { id: 'b1', name: 'B key', key: 'ak_mars_live_' + 'b'.repeat(48), tier: 'gemini-2.5-flash', relayZone: 'olympus-primary', status: 'active', createdAt: 'x', rpmLimit: 1, owner: 'userB' });
+    assert.equal(s.listMasked('userA', false).length, 1);
+    assert.equal(s.listMasked('userA', false)[0].id, 'a1');
+    assert.ok(!s.listMasked('userA', false).some(k => k.key && k.key.includes('aaaa')));
+    assert.ok(s.owns('a1', 'userA', false) && !s.owns('a1', 'userB', false));
+    assert.ok(s.owns('a1', 'anyone', true)); // admin override
+    assert.ok(read('server.js').includes('listMasked(keyOwner(req), keyIsAdmin(req))'));
+    assert.ok(read('server.js').includes('apiKeys.owns(id, keyOwner(req), keyIsAdmin(req))'));
+  });
+  it('prod secrets must be distinct + vault paths denied', () => {
+    assert.ok(read('server/config.js').includes('must all be distinct'));
+    const s = read('server.js');
+    assert.ok(s.includes('BLOCKED_PATHS') && s.includes('/data'));
+  });
+});
+
 describe('persistence + governance (10/10)', () => {
   it('secureStore/quota/brute/audit/2fa persist to disk', () => {
     assert.ok(read('server/utils/secureStore.js').includes('secureStore.json'));

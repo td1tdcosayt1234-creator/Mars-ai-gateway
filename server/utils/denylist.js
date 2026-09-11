@@ -2,11 +2,11 @@
 // Fixes: logout previously only cleared cookies — Bearer tokens stayed valid
 // until expiry. Now logout/refresh denylist the jti; authenticate rejects them.
 // Persisted to data/denylist.json (0600). Entries prune on read by exp.
-import { loadJson, saveJson } from './durable.js';
+import { loadSecureWithLegacy, saveSecure } from './durable.js';
 
-const denied = new Map(); // jti -> exp (unix seconds)
+const denied = new Map(); // jti -> exp (unix seconds), sealed at rest
 try {
-  const saved = loadJson('denylist.json', []);
+  const saved = loadSecureWithLegacy('denylist.json', []);
   const now = Math.floor(Date.now() / 1000);
   for (const [jti, exp] of saved) {
     if (typeof jti === 'string' && typeof exp === 'number' && exp > now) denied.set(jti, exp);
@@ -17,7 +17,7 @@ function persist() {
   if (persistT) return;
   persistT = setTimeout(() => {
     persistT = null;
-    try { saveJson('denylist.json', [...denied.entries()].slice(-2000)); } catch {}
+    try { saveSecure('denylist.json', [...denied.entries()].slice(-2000)); } catch {}
   }, 3000);
 }
 

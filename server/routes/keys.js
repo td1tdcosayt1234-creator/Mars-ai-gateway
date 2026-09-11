@@ -27,7 +27,9 @@ function validName(n) {
 // No demo seeds — keys issued via POST / only.
 
 router.get('/', authenticate, (req, res) => {
-  res.json({ keys: store.listMasked() });
+  // Owner-scoped (legacy router; authoritative route lives in server.js)
+  const owner = req.user.sub || req.user.jti;
+  res.json({ keys: store.listMasked(owner, false) });
 });
 
 router.post('/', authenticate, keyGenLimiter, csrfCheck, [
@@ -58,7 +60,7 @@ router.post('/', authenticate, keyGenLimiter, csrfCheck, [
     ? req.body.ipAllowlist.map(ip => sanitize(ip, 45)).filter(ip => /^[0-9a-fA-F:.]{7,45}$/.test(ip)).slice(0,10)
     : [];
   const { id, secret } = generateSecureKey();
-  const rec = { id, key: secret, name, tier, relayZone: zone, createdAt: new Date().toISOString(), status: 'active', rpmLimit: RPM[tier], monthlyQuota: 50000000, tokensUsed: 0, models, scopes: ['chat:write','tokenize:write'], ipAllowlist, expiresAt };
+  const rec = { id, key: secret, name, tier, relayZone: zone, createdAt: new Date().toISOString(), status: 'active', rpmLimit: RPM[tier], monthlyQuota: 50000000, tokensUsed: 0, models, scopes: ['chat:write','tokenize:write'], ipAllowlist, expiresAt, owner: req.user.sub || req.user.jti };
   store.set(id, rec);
   // Return plaintext once at creation only — never again (list is masked)
   res.status(201).json({ key: rec });
@@ -66,9 +68,10 @@ router.post('/', authenticate, keyGenLimiter, csrfCheck, [
 
 router.delete('/:id', authenticate, csrfCheck, param('id').isString().trim().isLength({ min: 5, max: 128 }), (req, res) => {
   const id = sanitize(req.params.id, 128);
-  // Lookup by id only — never accept raw secret as id (prevents oracle)
+  // Lookup by id only + ownership (others' ids answer 404 — no oracle)
   const k = store.get(id);
-  if (!k) return res.status(404).json({ error: 'Not found' });
+  const owner = req.user.sub || req.user.jti;
+  if (!k || !store.owns(id, owner, false)) return res.status(404).json({ error: 'Not found' });
   store.revoke(k.id);
   res.json({ ok: true, id: k.id });
 });

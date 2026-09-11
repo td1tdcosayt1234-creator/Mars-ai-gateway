@@ -1,13 +1,14 @@
 // tenantQuota.js - Token-bucket + quota + global breaker + anomaly (LLM10)
 // Prevents unbounded consumption / cost burn. Per-key TPM + RPM + daily quota,
-// global TPM breaker, EMA anomaly auto-throttle. Persisted (quota.json).
+// global TPM breaker, EMA anomaly auto-throttle. Sealed at rest (quota.json:
+// tampering fails GCM auth instead of resetting quotas).
 // Multi-instance must set REDIS_URL (atomic INCR) — see redisClient.js.
-import { loadJson, saveJson } from '../utils/durable.js';
+import { loadSecureWithLegacy, saveSecure } from '../utils/durable.js';
 import { audit } from './auditLogger.js';
 
 const usage = new Map(); // keyId -> { tokensToday, requestsToday, window: [{ts}], dailyReset: ts }
 try {
-  const saved = loadJson('quota.json', []);
+  const saved = loadSecureWithLegacy('quota.json', []);
   for (const [k, v] of saved) {
     if (typeof k === 'string' && v && typeof v.tokensToday === 'number') usage.set(k, v);
   }
@@ -17,7 +18,7 @@ function persistQuota() {
   if (persistT) return;
   persistT = setTimeout(() => {
     persistT = null;
-    try { saveJson('quota.json', [...usage.entries()].slice(-1000)); } catch {}
+    try { saveSecure('quota.json', [...usage.entries()].slice(-1000)); } catch {}
   }, 5000);
 }
 

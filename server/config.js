@@ -64,6 +64,16 @@ function parseCodeHashes() {
   return set;
 }
 
+// Secret separation: reusing one secret for JWT/HMAC/vault means one leak
+// compromises every layer (single point of failure). Fail-closed in prod.
+if (isProd && (jwtSecret === tierHmac || jwtSecret === masterKey || tierHmac === masterKey)) {
+  console.error('[FATAL] JWT_SECRET, TIER_HMAC and MASTER_KEY must all be distinct in production');
+  process.exit(1);
+}
+if (!isProd && (jwtSecret === tierHmac || jwtSecret === masterKey || tierHmac === masterKey)) {
+  console.warn('[SECURITY] secrets reused across layers — use distinct values (see .env.example)');
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv,

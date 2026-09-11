@@ -167,6 +167,19 @@ app.use(strictJsonLimit);
 // Secrets must never sit in caches (auth/keys/2fa/vault)
 app.use(['/api/auth', '/api/keys', '/api/2fa', '/api/vault'], noStore);
 
+// Vault files are never web-accessible: explicit deny before static/API.
+// (dist/ doesn't contain data/, but a misdeploy must still fail closed.)
+const BLOCKED_PATHS = [/^\/data(\/|$)/i, /^\/\.env(\.|$)/i, /^\/\.git(\/|$)/i, /\.pem$/i, /\.key$/i];
+app.use((req, res, next) => {
+  try {
+    const p = decodeURIComponent(req.path);
+    for (const r of BLOCKED_PATHS) {
+      if (r.test(p)) return res.status(404).json({ error: 'Not found' });
+    }
+  } catch {}
+  next();
+});
+
 // Request ID + basic logging (sanitized)
 app.use((req,res,next)=>{
   const id = crypto.randomBytes(8).toString('hex');
@@ -329,8 +342,11 @@ app.get('/api/auth/verify', authenticate, (req,res)=>{
 // CSRF check for state changing when using cookies (shared, Origin+double-submit)
 const csrfCheck = sharedCsrfCheck;
 
+function keyOwner(req){ return req.user.sub || req.user.jti; }
+function keyIsAdmin(req){ const sub = req.user.sub || req.user.jti; return !!(sub && config.adminSubjects.has(sub)); }
+
 app.get('/api/keys', authenticate, (req,res)=>{
-  res.json({ keys: apiKeys.listMasked() });
+  res.json({ keys: apiKeys.listMasked(keyOwner(req), keyIsAdmin(req)) });
 });
 
 app.post('/api/keys', authenticate, keyGenLimiter, csrfCheck, [
@@ -366,7 +382,8 @@ app.post('/api/keys', authenticate, keyGenLimiter, csrfCheck, [
     id, key: secret, name, tier, relayZone: zone,
     createdAt: new Date().toISOString(), lastUsedAt:'Never', status:'active',
     tokensUsed:0, requestCount:0, monthlyQuota: parseInt({ 'gemini-2.5-flash':'50','gemini-2.5-pro':'20','ares-neural-70b':'100','deep-space-vision':'10' }[tier]||'50')*1_000_000, rpmLimit: KEY_RPM[tier],
-    models, scopes:['chat:write','tokenize:write'], ipAllowlist, expiresAt
+    models, scopes:['chat:write','tokenize:write'], ipAllowlist, expiresAt,
+    owner: keyOwner(req) // row-level ownership: users only ever see their own keys
   };
   apiKeys.set(id, rec);
   addAudit('key_gen', `${id} tier=${tier}`, getClientIp(req), String(req.user.jti).slice(0,8));
@@ -378,9 +395,10 @@ app.delete('/api/keys/:id', authenticate, csrfCheck, param('id').isString().trim
   const errors=validationResult(req);
   if(!errors.isEmpty()) return res.status(400).json({ error:'Invalid id' });
   const id=sanitize(req.params.id,128);
-  // Lookup by id only — never accept raw secret as id (prevents oracle)
+  // Lookup by id only — never accept raw secret as id (prevents oracle).
+  // Ownership enforced: other users' ids answer 404 (no existence oracle).
   const k=apiKeys.get(id);
-  if(!k) return res.status(404).json({ error:'Key not found' });
+  if(!k || !apiKeys.owns(id, keyOwner(req), keyIsAdmin(req))) return res.status(404).json({ error:'Key not found' });
   apiKeys.revoke(k.id);
   addAudit('key_revoke', id.slice(0,32), getClientIp(req), String(req.user.jti).slice(0,8));
   res.json({ ok:true, id:k.id });
