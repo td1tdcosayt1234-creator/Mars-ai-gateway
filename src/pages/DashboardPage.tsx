@@ -92,6 +92,7 @@ export function DashboardPage({
             </p>
           </div>
         </div>
+      </motion.div>
 
       <motion.div variants={itemVariants} className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/50 border border-white/10 text-xs font-mono">
