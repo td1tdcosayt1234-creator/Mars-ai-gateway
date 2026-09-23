@@ -17,7 +17,7 @@
     "verify": "npm test && npm run lint && node ../verify_fixes.mjs"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
+    "@google/genai": "^2.23.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^6.1.1",
     "bcryptjs": "^2.4.3",
