@@ -34,7 +34,7 @@
     "rate-limit-redis": "^4.2.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "react-router-dom": "^7.18.3",
+    "react-router-dom": "^7.18.4",
     "redis": "^4.7.0",
     "vite": "^8.2.2"
   },
